@@ -18,11 +18,49 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        // Composant d'Écran de Chargement avec Animation
+        function LoadingScreen({ onLoaded }) {
+            const [progress, setProgress] = React.useState(0);
+
+            React.useEffect(() => {
+                const interval = setInterval(() => {
+                    setProgress((oldProgress) => {
+                        if (oldProgress >= 100) {
+                            clearInterval(interval);
+                            setTimeout(onLoaded, 400); // Disparition fluide une fois chargé à 100%
+                            return 100;
+                        }
+                        return oldProgress + 20;
+                    });
+                }, 150);
+                return () => clearInterval(interval);
+            }, [onLoaded]);
+
+            return (
+                <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center transition-opacity duration-700">
+                    <div className="relative mb-8">
+                        <div className="absolute -inset-4 bg-gradient-to-r from-blue-600 to-teal-500 rounded-full blur-xl opacity-50 animate-pulse"></div>
+                        <img src="assets/app_logo.png" alt="EverNote Logo" className="w-20 h-20 object-contain relative z-10 animate-bounce" />
+                    </div>
+                    <h2 className="text-2xl font-bold tracking-tight text-white mb-2">EverNote</h2>
+                    <p className="text-sm text-slate-400 mb-6">Préparation de votre assistant de recherche...</p>
+                    
+                    <div className="w-64 h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                        <div 
+                            className="h-full bg-gradient-to-r from-blue-500 to-teal-400 transition-all duration-200 ease-out rounded-full"
+                            style={{ width: `${progress}%` }}
+                        ></div>
+                    </div>
+                    <span className="text-xs text-slate-500 mt-3 font-mono">{progress}%</span>
+                </div>
+            );
+        }
+
         function Header() {
             const [isMenuOpen, setIsMenuOpen] = React.useState(false);
 
             return (
-                <header className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
+                <header className="fixed top-0 left-0 right-0 z-45 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
                     <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
                         <div className="flex items-center space-x-3 cursor-pointer">
                             <img src="assets/app_logo.png" alt="EverNote Logo" className="w-10 h-10 object-contain drop-shadow-lg" />
@@ -32,12 +70,13 @@
                             <a href="#fonctionnement" className="hover:text-white transition-colors">Fonctionnement</a>
                             <a href="#audio" className="hover:text-white transition-colors">Résumés Audio</a>
                             <a href="#explore" className="hover:text-white transition-colors">Explorer</a>
+                            <a href="#demo-video" className="hover:text-white transition-colors">Vidéo & Animation</a>
                             <a href="#hackathon-ideas" className="text-blue-400 hover:text-blue-300 transition-colors font-semibold">✨ Idées Hackathon</a>
                         </nav>
                         <div className="relative">
                             <button 
                                 onClick={() => setIsMenuOpen(!isMenuOpen)}
-                                className="p-2 rounded-full bg-slate-900 border border-slate-700 hover:bg-slate-800 transition-colors flex items-center justify-center shadow-md"
+                                className="p-2 rounded-full bg-slate-900 border border-slate-700 hover:bg-slate-800 transition-colors flex items-center justify-center shadow-md cursor-pointer"
                             >
                                 <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
@@ -109,7 +148,7 @@
                             <div className="relative rounded-xl overflow-hidden aspect-video bg-slate-950 flex items-center justify-center border border-slate-800">
                                 <iframe 
                                     className="w-full h-full object-cover"
-                                    src="https://www.youtube-embed.hr/embed/dQw4w9WgXcQ" 
+                                    src="https://www.youtube.com/embed/dQw4w9WgXcQ" 
                                     title="Démo EverNote"
                                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                                     allowFullScreen>
@@ -180,15 +219,40 @@
             );
         }
 
+        // Section Vidéo & Animation Interactive Améliorée
         function AnimationShowcase() {
             return (
-                <section className="py-12 bg-slate-950">
-                    <div className="relative max-w-4xl mx-auto rounded-3xl overflow-hidden shadow-2xl border border-slate-800 px-6">
-                        <img src="votre-animation.webp" alt="Démonstration de l'interface" className="w-full h-auto block rounded-2xl" />
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <a href="#explore" className="px-6 py-3 rounded-full bg-slate-900/90 text-white font-medium shadow-xl backdrop-blur-md border border-slate-700 hover:bg-slate-800 transition">
-                                Essayer EverNote
-                            </a>
+                <section id="demo-video" className="py-20 bg-slate-950 border-t border-slate-900">
+                    <div className="max-w-5xl mx-auto px-6">
+                        <div className="text-center max-w-2xl mx-auto mb-12">
+                            <span className="px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-xs text-teal-400 mb-4 inline-block">Immersion Visuelle</span>
+                            <h2 className="text-3xl font-bold tracking-tight text-white mb-4">🎬 Démonstration & Animation en Direct</h2>
+                            <p className="text-slate-400">Découvrez comment EverNote synchronise vos fichiers et génère des synthèses en quelques secondes grâce aux animations fluides de l'interface.</p>
+                        </div>
+                        
+                        <div className="relative rounded-3xl overflow-hidden shadow-2xl border border-slate-800 bg-slate-900 p-3 group">
+                            <div className="absolute inset-0 bg-gradient-to-tr from-blue-600/10 via-transparent to-teal-500/10 pointer-events-none"></div>
+                            
+                            {/* Lecteur Vidéo Intégré */}
+                            <div className="relative rounded-2xl overflow-hidden aspect-video bg-slate-950 border border-slate-800 flex items-center justify-center">
+                                <iframe 
+                                    className="w-full h-full object-cover"
+                                    src="https://www.youtube.com/embed/ScMzIvxBSi4" 
+                                    title="Animation et Présentation EverNote"
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                                    allowFullScreen>
+                                </iframe>
+                            </div>
+
+                            <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 px-2">
+                                <div className="flex items-center space-x-3">
+                                    <div className="w-3 h-3 rounded-full bg-green-500 animate-ping"></div>
+                                    <span className="text-sm text-slate-300 font-medium">Animation UI fluide à 60 FPS propulsée par Tailwind CSS</span>
+                                </div>
+                                <a href="signup.html" className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold shadow-lg shadow-blue-600/20 transition-all">
+                                    Créer un compte gratuit
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -237,11 +301,8 @@
 
             return (
                 <footer className="border-t border-slate-900 bg-slate-950">
-
-                    {/* Newsletter Card */}
                     <div className="max-w-7xl mx-auto px-6 py-16">
                         <div className="relative bg-gradient-to-br from-blue-600/20 via-indigo-500/10 to-teal-400/10 border border-slate-800 rounded-3xl p-10 md:p-14 overflow-hidden flex flex-col md:flex-row items-center justify-between gap-8">
-                            {/* Glow */}
                             <div className="absolute -top-20 -left-20 w-64 h-64 bg-blue-600/20 blur-[100px] rounded-full pointer-events-none"></div>
                             <div className="absolute -bottom-20 -right-20 w-64 h-64 bg-teal-500/15 blur-[100px] rounded-full pointer-events-none"></div>
 
@@ -285,11 +346,8 @@
                         </div>
                     </div>
 
-                    {/* Footer Links + Copyright */}
                     <div className="border-t border-slate-900">
                         <div className="max-w-7xl mx-auto px-6 py-10 flex flex-col md:flex-row items-center justify-between gap-8">
-
-                            {/* Brand */}
                             <div className="flex flex-col items-center md:items-start gap-2">
                                 <div className="flex items-center space-x-2">
                                     <img src="assets/app_logo.png" alt="EverNote Logo" className="w-7 h-7 object-contain" />
@@ -300,17 +358,16 @@
                                 </p>
                             </div>
 
-                            {/* Links */}
                             <div className="flex flex-wrap justify-center gap-6 text-sm text-slate-400">
                                 <a href="#fonctionnement" className="hover:text-white transition-colors">Fonctionnement</a>
                                 <a href="#audio" className="hover:text-white transition-colors">Résumés Audio</a>
                                 <a href="#explore" className="hover:text-white transition-colors">Explorer</a>
+                                <a href="#demo-video" className="hover:text-white transition-colors">Vidéo & Animation</a>
                                 <a href="#hackathon-ideas" className="hover:text-white transition-colors">Hackathon</a>
                                 <a href="login.html" className="hover:text-white transition-colors">Connexion</a>
                                 <a href="signup.html" className="hover:text-white transition-colors">Inscription</a>
                             </div>
 
-                            {/* Social Icons */}
                             <div className="flex items-center space-x-3">
                                 <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="w-9 h-9 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-all" title="GitHub">
                                     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
@@ -330,7 +387,6 @@
                             </div>
                         </div>
 
-                        {/* Copyright */}
                         <div className="border-t border-slate-900 py-5 text-center">
                             <p className="text-xs text-slate-600">
                                 © 2026 <span className="text-slate-400 font-semibold">ChangeMakers</span>. Tous droits réservés. Fait avec ❤️ pour le Hackathon.
@@ -342,8 +398,11 @@
         }
 
         function App() {
+            const [isLoading, setIsLoading] = React.useState(true);
+
             return (
                 <div>
+                    {isLoading && <LoadingScreen onLoaded={() => setIsLoading(false)} />}
                     <Header />
                     <Hero />
                     <FonctionnementWithVideo />
