@@ -1,0 +1,2019 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notebook IA - Interface Professionnelle</title>
+     <link rel="icon" type="image/x-icon" href="assets/app_logo.png">
+    <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'nb-main': '#131314',
+                        'nb-panel': '#1e1f20',
+                        'nb-card': '#28292a',
+                        'nb-hover': '#333435',
+                        'nb-text-main': '#e3e3e3',
+                        'nb-text-muted': '#8e918f',
+                        'nb-accent': '#a8c7fa',
+                        'nb-border': '#444746',
+                    },
+                    fontFamily: {
+                        'sans': ['Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            user-select: none;
+            overflow: hidden;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #444746;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #5f6368;
+        }
+    </style>
+</head>
+<body class="bg-nb-main text-nb-text-main h-screen font-sans antialiased">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // ================= RENDU MARKDOWN LÉGER (pour les résultats Studio générés par l'IA) =================
+        function MarkdownInline({ text }) {
+            const parts = [];
+            const regex = /(\*\*[^*]+\*\*|\*[^*]+\*)/g;
+            let lastIndex = 0;
+            let match;
+            let key = 0;
+            while ((match = regex.exec(text)) !== null) {
+                if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+                const token = match[0];
+                if (token.startsWith('**')) {
+                    parts.push(<strong key={key++} className="text-nb-text-main font-semibold">{token.slice(2, -2)}</strong>);
+                } else {
+                    parts.push(<em key={key++} className="italic">{token.slice(1, -1)}</em>);
+                }
+                lastIndex = regex.lastIndex;
+            }
+            if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+            return <React.Fragment>{parts}</React.Fragment>;
+        }
+
+        function renderMarkdown(content) {
+            if (!content) return null;
+            const lines = content.replace(/\r\n/g, '\n').split('\n');
+            const blocks = [];
+            let i = 0;
+            let key = 0;
+
+            const isHeading = (l) => /^(#{1,4})\s+/.test(l);
+            const isHr = (l) => /^-{3,}$/.test(l.trim());
+            const isTableRow = (l) => /^\|.*\|\s*$/.test(l);
+            const isListItem = (l) => /^\s*([-•*]|\d+[.)])\s+/.test(l);
+
+            while (i < lines.length) {
+                const line = lines[i];
+
+                if (line.trim() === '') { i++; continue; }
+
+                if (isHr(line)) {
+                    blocks.push(<hr key={key++} className="border-nb-border/60 my-4" />);
+                    i++;
+                    continue;
+                }
+
+                const headingMatch = line.match(/^(#{1,4})\s+(.*)$/);
+                if (headingMatch) {
+                    const level = headingMatch[1].length;
+                    const sizes = {
+                        1: 'text-lg font-semibold mt-1 mb-2',
+                        2: 'text-base font-semibold mt-4 mb-2 pb-1 border-b border-nb-border/50',
+                        3: 'text-sm font-semibold mt-3 mb-1.5 text-nb-accent',
+                        4: 'text-sm font-medium mt-2 mb-1'
+                    };
+                    blocks.push(
+                        <p key={key++} className={`${sizes[level] || sizes[4]} text-nb-text-main`}>
+                            <MarkdownInline text={headingMatch[2]} />
+                        </p>
+                    );
+                    i++;
+                    continue;
+                }
+
+                if (isTableRow(line) && lines[i + 1] && /^\|?[\s:|-]+\|?\s*$/.test(lines[i + 1])) {
+                    const tableLines = [line, lines[i + 1]];
+                    let j = i + 2;
+                    while (j < lines.length && isTableRow(lines[j])) { tableLines.push(lines[j]); j++; }
+                    const parseRow = (row) => row.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+                    const header = parseRow(tableLines[0]);
+                    const rows = tableLines.slice(2).map(parseRow);
+                    blocks.push(
+                        <div key={key++} className="overflow-x-auto my-3 rounded-xl border border-nb-border/60">
+                            <table className="w-full text-xs border-collapse">
+                                <thead>
+                                    <tr className="bg-nb-hover/60">
+                                        {header.map((h, hi) => (
+                                            <th key={hi} className="text-left font-semibold text-nb-text-main px-3 py-2 border-b border-nb-border/60 whitespace-normal">
+                                                <MarkdownInline text={h} />
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {rows.map((r, ri) => (
+                                        <tr key={ri} className={ri % 2 === 0 ? 'bg-nb-card' : 'bg-nb-panel'}>
+                                            {r.map((c, ci) => (
+                                                <td key={ci} className="px-3 py-2 align-top text-nb-text-main/90 border-b border-nb-border/30 whitespace-normal">
+                                                    <MarkdownInline text={c} />
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    );
+                    i = j;
+                    continue;
+                }
+
+                if (isListItem(line)) {
+                    const ordered = /^\s*\d+[.)]\s+/.test(line);
+                    const items = [];
+                    while (i < lines.length && isListItem(lines[i])) {
+                        items.push(lines[i].replace(/^\s*([-•*]|\d+[.)])\s+/, ''));
+                        i++;
+                    }
+                    const ListTag = ordered ? 'ol' : 'ul';
+                    blocks.push(
+                        <ListTag key={key++} className={`${ordered ? 'list-decimal' : 'list-disc'} list-outside pl-5 space-y-1 my-2 text-sm text-nb-text-main/90`}>
+                            {items.map((it, ii) => <li key={ii}><MarkdownInline text={it} /></li>)}
+                        </ListTag>
+                    );
+                    continue;
+                }
+
+                const paraLines = [line];
+                i++;
+                while (i < lines.length && lines[i].trim() !== '' && !isHeading(lines[i]) && !isHr(lines[i]) && !isTableRow(lines[i]) && !isListItem(lines[i])) {
+                    paraLines.push(lines[i]);
+                    i++;
+                }
+                blocks.push(
+                    <p key={key++} className="text-sm text-nb-text-main/90 leading-relaxed my-2">
+                        {paraLines.map((pl, pi) => (
+                            <React.Fragment key={pi}>
+                                <MarkdownInline text={pl} />
+                                {pi < paraLines.length - 1 && <br />}
+                            </React.Fragment>
+                        ))}
+                    </p>
+                );
+            }
+
+            return blocks;
+        }
+
+        function NotebookApp() {
+            const [inputQuery, setInputQuery] = useState('');
+            const [sources, setSources] = useState([]);
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [isGenerating, setIsGenerating] = useState(false);
+            const [notebookTitle, setNotebookTitle] = useState('Notebook sans titre');
+            
+            // Nouvel état pour l'heure en haut
+            const [currentTime, setCurrentTime] = useState(new Date());
+
+            // Détecte le fuseau horaire du visiteur (donc "le lieu") directement dans le navigateur,
+            // sans demande de permission ni service externe.
+            const [placeLabel, setPlaceLabel] = useState('');
+            useEffect(() => {
+                try {
+                    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; // ex: "Africa/Tunis"
+                    const city = tz.split('/').pop().replace(/_/g, ' ');
+                    setPlaceLabel(city);
+                } catch (e) {
+                    setPlaceLabel('');
+                }
+            }, []);
+
+            // États pour les fonctionnalités (Dictée vocale, Synthèse vocale, Scan papier/OCR)
+            const [isListening, setIsListening] = useState(false);
+            const [isSpeaking, setIsSpeaking] = useState(false);
+            const [activeSpeechIndex, setActiveSpeechIndex] = useState(null);
+            const [isScanning, setIsScanning] = useState(false);
+            const fileInputRef = useRef(null);
+            const docFileInputRef = useRef(null);
+
+            // ================= CONFIGURATION DU PROXY API =================
+            // Aucune clé API n'est stockée ici. L'app appelle un petit serveur
+            // proxy (Cloudflare Worker) qui détient les vraies clés côté serveur.
+            // Voir /proxy/README.md pour le déploiement.
+            const DEFAULT_PROXY_URL = ""; // ex: "https://notebook-ia-proxy.votre-compte.workers.dev"
+            const DEFAULT_PROXY_TOKEN = ""; // optionnel, doit correspondre au secret PROXY_TOKEN du Worker
+
+            // ================= PARTAGE RÉEL DES NOTEBOOKS (Supabase) =================
+            // 1) Créez un projet gratuit sur https://supabase.com
+            // 2) Dans l'éditeur SQL du projet, exécutez le script de création de table fourni
+            //    (table "notebooks_partages" + policies RLS publiques lecture/écriture).
+            // 3) Dans Project Settings > API, copiez "Project URL" et la clé "anon public"
+            //    et collez-les ci-dessous. Ainsi le partage fonctionnera pour TOUT LE MONDE
+            //    qui ouvre l'application (pas seulement vous), sans rien configurer.
+            const DEFAULT_SUPABASE_URL = "";       // ex: "https://abcdefghij.supabase.co"
+            const DEFAULT_SUPABASE_ANON_KEY = "";  // clé "anon public" (jamais la "service_role")
+
+            const [proxyUrl, setProxyUrl] = useState(() => {
+                try { return localStorage.getItem('nb_proxy_url') || DEFAULT_PROXY_URL; } catch (e) { return DEFAULT_PROXY_URL; }
+            });
+            const [proxyToken, setProxyToken] = useState(() => {
+                try { return localStorage.getItem('nb_proxy_token') || DEFAULT_PROXY_TOKEN; } catch (e) { return DEFAULT_PROXY_TOKEN; }
+            });
+
+            const [selectedProvider, setSelectedProvider] = useState('auto'); // 'auto' | 'gemini' | 'openai' | 'groq'
+            const [isApiModalOpen, setIsApiModalOpen] = useState(false);
+            const [proxyUrlInput, setProxyUrlInput] = useState(proxyUrl);
+            const [proxyTokenInput, setProxyTokenInput] = useState(proxyToken);
+            const isProxyConfigured = Boolean(proxyUrl);
+            const [apiStatusMessage, setApiStatusMessage] = useState(isProxyConfigured ? 'Prêt (via proxy sécurisé)' : 'Proxy non configuré');
+            const [isTestingApi, setIsTestingApi] = useState(false);
+            const [apiTestResult, setApiTestResult] = useState(null);
+
+            // --- Configuration Supabase (partage réel des notebooks) ---
+            const [supabaseUrl, setSupabaseUrl] = useState(() => {
+                try { return localStorage.getItem('nb_supabase_url') || DEFAULT_SUPABASE_URL; } catch (e) { return DEFAULT_SUPABASE_URL; }
+            });
+            const [supabaseAnonKey, setSupabaseAnonKey] = useState(() => {
+                try { return localStorage.getItem('nb_supabase_key') || DEFAULT_SUPABASE_ANON_KEY; } catch (e) { return DEFAULT_SUPABASE_ANON_KEY; }
+            });
+            const [supabaseUrlInput, setSupabaseUrlInput] = useState(supabaseUrl);
+            const [supabaseKeyInput, setSupabaseKeyInput] = useState(supabaseAnonKey);
+            const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+
+            useEffect(() => {
+                setProxyUrlInput(proxyUrl);
+            }, [proxyUrl]);
+
+            useEffect(() => {
+                setProxyTokenInput(proxyToken);
+            }, [proxyToken]);
+
+            useEffect(() => {
+                setSupabaseUrlInput(supabaseUrl);
+            }, [supabaseUrl]);
+
+            useEffect(() => {
+                setSupabaseKeyInput(supabaseAnonKey);
+            }, [supabaseAnonKey]);
+
+            const saveApiKeysFromModal = () => {
+                const newProxyUrl = proxyUrlInput.trim().replace(/\/+$/, '');
+                const newProxyToken = proxyTokenInput.trim();
+                setProxyUrl(newProxyUrl);
+                setProxyToken(newProxyToken);
+
+                const newSupabaseUrl = supabaseUrlInput.trim().replace(/\/+$/, '');
+                const newSupabaseKey = supabaseKeyInput.trim();
+                setSupabaseUrl(newSupabaseUrl);
+                setSupabaseAnonKey(newSupabaseKey);
+
+                try {
+                    localStorage.setItem('nb_proxy_url', newProxyUrl);
+                    localStorage.setItem('nb_proxy_token', newProxyToken);
+                    localStorage.setItem('nb_supabase_url', newSupabaseUrl);
+                    localStorage.setItem('nb_supabase_key', newSupabaseKey);
+                } catch (e) {}
+                setApiStatusMessage(newProxyUrl ? 'Configuré (via proxy sécurisé)' : 'Proxy non configuré');
+                setIsApiModalOpen(false);
+            };
+
+            const compileSourcesContext = () => {
+                if (!sources || sources.length === 0) return "";
+                return sources.map((s, idx) => {
+                    const text = s.content ? s.content : `[Fichier : ${s.name}]`;
+                    return `### Source ${idx + 1} : ${s.name}\n${text}`;
+                }).join('\n\n---\n\n');
+            };
+
+            // Appelle le proxy sécurisé (le Worker détient les vraies clés, jamais le navigateur)
+            const callProxy = async (route, body) => {
+                if (!proxyUrl) {
+                    throw new Error("Proxy non configuré : ouvrez les paramètres API et renseignez l'URL du proxy.");
+                }
+                const res = await fetch(`${proxyUrl.replace(/\/+$/, '')}/${route}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(proxyToken ? { 'X-Proxy-Token': proxyToken } : {})
+                    },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    throw new Error(data?.error || `Erreur proxy HTTP ${res.status}`);
+                }
+                return data;
+            };
+
+            // Fonction unifiée pour appeler l'IA. Les vraies clés vivent uniquement
+            // côté serveur (Worker) ; le navigateur ne voit jamais que l'URL du proxy.
+            const callAI = async (prompt, systemInstruction = '') => {
+                let lastError = null;
+
+                // 1. Gemini (via proxy)
+                if (selectedProvider === 'auto' || selectedProvider === 'gemini') {
+                    try {
+                        setApiStatusMessage('Requête Gemini (via proxy)...');
+                        const data = await callProxy('gemini', {
+                            contents: [
+                                {
+                                    role: 'user',
+                                    parts: [{ text: (systemInstruction ? systemInstruction + '\n\n' : '') + prompt }]
+                                }
+                            ],
+                            generationConfig: { temperature: 0.7, maxOutputTokens: 2500 }
+                        });
+                        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (text) {
+                            setApiStatusMessage('Actif · Gemini 2.5 Flash (via proxy)');
+                            return text;
+                        }
+                        lastError = new Error(data?.error?.message || 'Gemini: réponse vide');
+                    } catch (e) {
+                        console.warn('Gemini (proxy) erreur :', e);
+                        lastError = e;
+                    }
+                }
+
+                // 2. OpenAI (via proxy)
+                if (selectedProvider === 'auto' || selectedProvider === 'openai') {
+                    try {
+                        setApiStatusMessage('Requête OpenAI (via proxy)...');
+                        const data = await callProxy('openai', {
+                            model: 'gpt-4o-mini',
+                            messages: [
+                                ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),
+                                { role: 'user', content: prompt }
+                            ],
+                            max_tokens: 2048,
+                            temperature: 0.7
+                        });
+                        const text = data?.choices?.[0]?.message?.content;
+                        if (text) {
+                            setApiStatusMessage('Actif · OpenAI GPT-4o-mini (via proxy)');
+                            return text;
+                        }
+                        lastError = new Error(data?.error?.message || 'OpenAI: réponse vide');
+                    } catch (e) {
+                        console.warn('OpenAI (proxy) erreur :', e);
+                        lastError = e;
+                    }
+                }
+
+                // 3. Groq (via proxy)
+                if (selectedProvider === 'auto' || selectedProvider === 'groq') {
+                    try {
+                        setApiStatusMessage('Requête Groq (via proxy)...');
+                        const data = await callProxy('groq', {
+                            model: 'qwen/qwen3.8-27b',
+                            messages: [
+                                ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),
+                                { role: 'user', content: prompt }
+                            ],
+                            max_tokens: 2048,
+                            temperature: 0.7
+                        });
+                        const text = data?.choices?.[0]?.message?.content;
+                        if (text) {
+                            setApiStatusMessage('Actif · Groq Qwen (via proxy)');
+                            return text;
+                        }
+                        lastError = new Error(data?.error?.message || 'Groq: réponse vide');
+                    } catch (e) {
+                        console.warn('Groq (proxy) erreur :', e);
+                        lastError = e;
+                    }
+                }
+
+                setApiStatusMessage('Erreur API');
+                throw lastError || new Error("Le proxy n'a retourné aucune réponse exploitable.");
+            };
+
+            const testApiConnection = async () => {
+                setIsTestingApi(true);
+                setApiTestResult(null);
+                try {
+                    const res = await callAI("Réponds en une phrase courte confirmant que la connexion à l'API est réussie.");
+                    setApiTestResult({ success: true, text: res });
+                } catch (err) {
+                    setApiTestResult({ success: false, text: err.message || "Erreur lors du test." });
+                } finally {
+                    setIsTestingApi(false);
+                }
+            };
+
+            // États pour l'outil d'amélioration des icônes (Studio)
+            const [iconStyle, setIconStyle] = useState('vector'); // 'vector' | 'emoji'
+            const [iconColor, setIconColor] = useState('#a8c7fa');
+            const [isIconModalOpen, setIsIconModalOpen] = useState(false);
+
+            // États pour le menu utilisateur / déconnexion
+            const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+            const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+            const [isLoggedOut, setIsLoggedOut] = useState(false);
+
+            // États pour le partage du notebook
+            const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+            const [shareUrl, setShareUrl] = useState('');
+            const [isLinkCopied, setIsLinkCopied] = useState(false);
+
+            // --- Mode Focus : minuteur Pomodoro + sons d'ambiance (pluie, café, lofi) ---
+            const [isFocusOpen, setIsFocusOpen] = useState(false);
+            const POMO_DURATIONS = { focus: 25 * 60, short: 5 * 60, long: 15 * 60 };
+            const [pomoMode, setPomoMode] = useState('focus');
+            const [timeLeft, setTimeLeft] = useState(POMO_DURATIONS.focus);
+            const [isTimerRunning, setIsTimerRunning] = useState(false);
+            const [pomoCount, setPomoCount] = useState(0);
+            const [activeSound, setActiveSound] = useState(null);
+            const [soundVolume, setSoundVolume] = useState(0.5);
+            const audioRef = useRef({ ctx: null, nodes: [], lofiTimer: null });
+            const [customUrl, setCustomUrl] = useState('');
+            const customAudioRef = useRef(null);
+
+            const formatTime = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+            useEffect(() => {
+                if (!isTimerRunning) return;
+                const id = setInterval(() => setTimeLeft(prev => (prev > 0 ? prev - 1 : 0)), 1000);
+                return () => clearInterval(id);
+            }, [isTimerRunning]);
+
+            useEffect(() => {
+                if (timeLeft !== 0 || !isTimerRunning) return;
+                playChime();
+                setIsTimerRunning(false);
+                if (pomoMode === 'focus') {
+                    const next = pomoCount + 1;
+                    setPomoCount(next);
+                    const nextMode = next % 4 === 0 ? 'long' : 'short';
+                    setPomoMode(nextMode);
+                    setTimeLeft(POMO_DURATIONS[nextMode]);
+                } else {
+                    setPomoMode('focus');
+                    setTimeLeft(POMO_DURATIONS.focus);
+                }
+            }, [timeLeft]);
+
+            useEffect(() => {
+                const master = audioRef.current.nodes[0];
+                if (master && master.gain) master.gain.value = soundVolume;
+                if (customAudioRef.current) customAudioRef.current.volume = soundVolume;
+            }, [soundVolume]);
+
+            const toggleTimer = () => setIsTimerRunning(r => !r);
+            const resetTimer = () => { setIsTimerRunning(false); setTimeLeft(POMO_DURATIONS[pomoMode]); };
+            const switchPomoMode = (mode) => { setIsTimerRunning(false); setPomoMode(mode); setTimeLeft(POMO_DURATIONS[mode]); };
+
+            const getAudioCtx = () => {
+                if (!audioRef.current.ctx) audioRef.current.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                return audioRef.current.ctx;
+            };
+
+            const playChime = () => {
+                try {
+                    const ctx = getAudioCtx();
+                    const o = ctx.createOscillator();
+                    const g = ctx.createGain();
+                    o.type = 'sine'; o.frequency.value = 880;
+                    g.gain.setValueAtTime(0.2, ctx.currentTime);
+                    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1);
+                    o.connect(g); g.connect(ctx.destination);
+                    o.start(); o.stop(ctx.currentTime + 1);
+                } catch (e) {}
+            };
+
+            const makeNoiseBuffer = (ctx) => {
+                const bufferSize = ctx.sampleRate * 2;
+                const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                return buffer;
+            };
+
+            const stopAmbientSound = () => {
+                audioRef.current.nodes.forEach(n => { try { n.stop && n.stop(); n.disconnect && n.disconnect(); } catch (e) {} });
+                audioRef.current.nodes = [];
+                if (audioRef.current.lofiTimer) { clearTimeout(audioRef.current.lofiTimer); audioRef.current.lofiTimer = null; }
+            };
+
+            const playAmbientSound = (type) => {
+                stopAmbientSound();
+                const ctx = getAudioCtx();
+                if (ctx.state === 'suspended') ctx.resume();
+                const master = ctx.createGain();
+                master.gain.value = soundVolume;
+                master.connect(ctx.destination);
+                audioRef.current.nodes.push(master);
+
+                if (type === 'rain') {
+                    const noise = ctx.createBufferSource();
+                    noise.buffer = makeNoiseBuffer(ctx); noise.loop = true;
+                    const filter = ctx.createBiquadFilter();
+                    filter.type = 'bandpass'; filter.frequency.value = 3200; filter.Q.value = 0.6;
+                    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.15;
+                    const lfoGain = ctx.createGain(); lfoGain.gain.value = 800;
+                    lfo.connect(lfoGain); lfoGain.connect(filter.frequency);
+                    noise.connect(filter); filter.connect(master);
+                    noise.start(); lfo.start();
+                    audioRef.current.nodes.push(noise, filter, lfo, lfoGain);
+                } else if (type === 'cafe') {
+                    const noise = ctx.createBufferSource();
+                    noise.buffer = makeNoiseBuffer(ctx); noise.loop = true;
+                    const filter = ctx.createBiquadFilter();
+                    filter.type = 'lowpass'; filter.frequency.value = 900;
+                    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.08;
+                    const lfoGain = ctx.createGain(); lfoGain.gain.value = 200;
+                    lfo.connect(lfoGain); lfoGain.connect(filter.frequency);
+                    noise.connect(filter); filter.connect(master);
+                    noise.start(); lfo.start();
+                    audioRef.current.nodes.push(noise, filter, lfo, lfoGain);
+                } else if (type === 'lofi') {
+                    const crackle = ctx.createBufferSource();
+                    crackle.buffer = makeNoiseBuffer(ctx); crackle.loop = true;
+                    const crackleFilter = ctx.createBiquadFilter();
+                    crackleFilter.type = 'highpass'; crackleFilter.frequency.value = 4000;
+                    const crackleGain = ctx.createGain(); crackleGain.gain.value = 0.15;
+                    crackle.connect(crackleFilter); crackleFilter.connect(crackleGain); crackleGain.connect(master);
+                    crackle.start();
+                    audioRef.current.nodes.push(crackle, crackleFilter, crackleGain);
+
+                    const chords = [[261.6, 329.6, 392, 493.9], [220, 277.2, 329.6, 415.3], [174.6, 220, 261.6, 349.2], [196, 246.9, 293.7, 349.2]];
+                    let chordIndex = 0;
+                    const scheduleChord = () => {
+                        const now = ctx.currentTime;
+                        const chordGain = ctx.createGain();
+                        chordGain.gain.setValueAtTime(0, now);
+                        chordGain.gain.linearRampToValueAtTime(0.09, now + 1);
+                        chordGain.gain.linearRampToValueAtTime(0, now + 3.6);
+                        chordGain.connect(master);
+                        audioRef.current.nodes.push(chordGain);
+                        chords[chordIndex % chords.length].forEach(freq => {
+                            const o = ctx.createOscillator();
+                            o.type = 'triangle'; o.frequency.value = freq;
+                            const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1200;
+                            o.connect(lp); lp.connect(chordGain);
+                            o.start(now); o.stop(now + 3.8);
+                            audioRef.current.nodes.push(o, lp);
+                        });
+                        chordIndex++;
+                        audioRef.current.lofiTimer = setTimeout(scheduleChord, 4000);
+                    };
+                    scheduleChord();
+                }
+                setActiveSound(type);
+            };
+
+            const toggleAmbientSound = (type) => {
+                if (customAudioRef.current) customAudioRef.current.pause();
+                if (activeSound === type) { stopAmbientSound(); setActiveSound(null); }
+                else playAmbientSound(type);
+            };
+
+            const toggleCustomSound = () => {
+                if (!customUrl.trim()) return;
+                if (activeSound === 'custom') {
+                    if (customAudioRef.current) customAudioRef.current.pause();
+                    setActiveSound(null);
+                    return;
+                }
+                stopAmbientSound();
+                if (customAudioRef.current) {
+                    customAudioRef.current.src = customUrl.trim();
+                    customAudioRef.current.loop = true;
+                    customAudioRef.current.volume = soundVolume;
+                    customAudioRef.current.play().catch(() => {
+                        alert("Impossible de lire ce lien. Utilisez un lien direct vers un fichier audio (.mp3, .wav, .ogg) — les liens YouTube ou Spotify ne fonctionnent pas ici.");
+                        setActiveSound(null);
+                    });
+                }
+                setActiveSound('custom');
+            };
+
+            const [isSharing, setIsSharing] = useState(false);
+            const [shareError, setShareError] = useState('');
+
+            const handleShare = async () => {
+                setShareError('');
+                setShareUrl('');
+                setIsLinkCopied(false);
+                setIsShareModalOpen(true);
+
+                if (!isSupabaseConfigured) {
+                    setShareError("Le partage réel n'est pas encore configuré : ouvrez « Clés API » et renseignez l'URL + la clé « anon public » de votre projet Supabase.");
+                    return;
+                }
+
+                setIsSharing(true);
+                try {
+                    const slug = notebookTitle
+                        .toLowerCase()
+                        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                        .replace(/[^a-z0-9]+/g, '-')
+                        .replace(/(^-|-$)/g, '') || 'notebook';
+                    const shareId = `${slug}-${Math.random().toString(36).slice(2, 8)}`;
+
+                    const payload = {
+                        id: shareId,
+                        title: notebookTitle,
+                        data: { notebookTitle, sources, chatHistory, studioResults }
+                    };
+
+                    const res = await fetch(`${supabaseUrl}/rest/v1/notebooks_partages`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'apikey': supabaseAnonKey,
+                            'Authorization': `Bearer ${supabaseAnonKey}`,
+                            'Prefer': 'return=minimal'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!res.ok) {
+                        const errBody = await res.text().catch(() => '');
+                        throw new Error(errBody || `Erreur HTTP ${res.status}`);
+                    }
+
+                    const url = `${window.location.origin}${window.location.pathname}?share=${shareId}`;
+                    setShareUrl(url);
+                } catch (err) {
+                    setShareError(`Échec de l'enregistrement sur Supabase : ${err.message || 'erreur inconnue'}. Vérifiez la table "notebooks_partages" et ses règles RLS.`);
+                } finally {
+                    setIsSharing(false);
+                }
+            };
+
+            const copyShareLink = async () => {
+                try {
+                    await navigator.clipboard.writeText(shareUrl);
+                } catch (e) {
+                    // repli si le presse-papiers est indisponible
+                }
+                setIsLinkCopied(true);
+                setTimeout(() => setIsLinkCopied(false), 2000);
+            };
+
+            // --- ESPACE DE GÉNÉRATION DE CHAQUE CARTE STUDIO ---
+            // Chaque outil (audio, vidéo, carte mentale, rapport, etc.) possède son propre
+            // « espace » de résultat, prêt à recevoir le contenu renvoyé par votre API.
+            const [activeStudioTool, setActiveStudioTool] = useState(null); // outil actuellement ouvert
+            const [studioResults, setStudioResults] = useState({});         // { toolId: contenu généré }
+            const [isGeneratingStudio, setIsGeneratingStudio] = useState(false);
+
+            const openStudioTool = (tool) => setActiveStudioTool(tool);
+
+            const [isStudioResultCopied, setIsStudioResultCopied] = useState(false);
+            const copyStudioResult = async () => {
+                const text = activeStudioTool ? studioResults[activeStudioTool.id] : '';
+                if (!text) return;
+                try {
+                    await navigator.clipboard.writeText(text);
+                } catch (e) {}
+                setIsStudioResultCopied(true);
+                setTimeout(() => setIsStudioResultCopied(false), 2000);
+            };
+
+            const generateStudioContent = async () => {
+                if (!activeStudioTool || isGeneratingStudio) return;
+                setIsGeneratingStudio(true);
+
+                try {
+                    const sourcesContext = compileSourcesContext();
+                    let toolInstruction = "";
+                    switch (activeStudioTool.id) {
+                        case 'audio':
+                            toolInstruction = "Rédige un script complet et passionnant de résumé audio (format podcast de 2 minutes avec deux animateurs dynamiques, Alex et Sam). Ils synthétisent de manière vivante, accessible et rythmée les enseignements clés des sources.";
+                            break;
+                        case 'video':
+                            toolInstruction = "Génère un script et storyboard vidéo explicatif complet (Introduction visuelle, 3 séquences thématiques avec description visuelle + voix off, et Conclusion mémorable) basé sur les sources.";
+                            break;
+                        case 'mind':
+                            toolInstruction = "Construis une carte mentale textuelle arborescente détaillée et parfaitement hiérarchisée des concepts clés (avec branches principales, sous-branches, puces et émojis explicatifs).";
+                            break;
+                        case 'report':
+                            toolInstruction = "Rédige un rapport d'analyse exécutif et professionnel complet comprenant : Titre, Contexte & Résumé exécutif, Analyse détaillée des piliers clés, et Recommandations stratégiques / Conclusion.";
+                            break;
+                        case 'flash':
+                            toolInstruction = "Crée 5 fiches d'étude (Flashcards) synthétiques sous le format :\n- Fiche 1 :\n  • Question / Concept : ...\n  • Réponse clé : ...\n(jusqu'à 5 fiches claires).";
+                            break;
+                        case 'quiz':
+                            toolInstruction = "Génère un quiz interactif de 4 questions à choix multiples (QCM). Pour chaque question, propose 4 choix (A, B, C, D), indique clairement la bonne réponse et donne une explication pédagogique.";
+                            break;
+                        case 'info':
+                            toolInstruction = "Conçois le contenu textuel et les métriques clés d'une infographie percutante résumant les statistiques, étapes et concepts majeurs des sources.";
+                            break;
+                        case 'data':
+                            toolInstruction = "Extrais et structure les données, faits, statistiques et éléments clés sous forme d'un tableau Markdown clair, lisible et bien ordonné.";
+                            break;
+                        default:
+                            toolInstruction = `Génère une analyse approfondie et structurée pour l'outil : ${activeStudioTool.title}.`;
+                    }
+
+                    const systemPrompt = `Tu es l'assistant d'apprentissage avancé de Notebook IA.
+${sourcesContext ? `Voici les sources documentaires de l'utilisateur :\n\n${sourcesContext}` : `Sujet du notebook : "${notebookTitle}". Génère un contenu riche et pertinent sur ce thème.`}
+Réponds toujours en français, avec une mise en page soignée (Markdown structuré, puces, sections distinctes).`;
+
+                    const generated = await callAI(toolInstruction, systemPrompt);
+                    setStudioResults(prev => ({
+                        ...prev,
+                        [activeStudioTool.id]: generated
+                    }));
+                } catch (err) {
+                    setStudioResults(prev => ({
+                        ...prev,
+                        [activeStudioTool.id]: `⚠️ Erreur de génération : ${err.message || 'Impossible de joindre l’API'}.\nVérifiez vos clés API dans le menu « Clés API » en haut.`
+                    }));
+                } finally {
+                    setIsGeneratingStudio(false);
+                }
+            };
+
+            const [chatHistory, setChatHistory] = useState([
+                { type: 'ai', text: 'Bonjour ! Je suis votre assistant personnel. Glissez-déposez vos fichiers à gauche ou ajoutez des sources pour commencer l’analyse.' }
+            ]);
+
+            // --- Chargement d'un notebook partagé (lien ?share=xxxx) en lecture ---
+            const [isViewingSharedNotebook, setIsViewingSharedNotebook] = useState(false);
+            const [isLoadingSharedNotebook, setIsLoadingSharedNotebook] = useState(false);
+            const [sharedLoadError, setSharedLoadError] = useState('');
+
+            useEffect(() => {
+                const params = new URLSearchParams(window.location.search);
+                const shareId = params.get('share');
+                if (!shareId) return;
+
+                if (!supabaseUrl || !supabaseAnonKey) {
+                    setSharedLoadError("Ce lien pointe vers un notebook partagé, mais cette copie de l'application n'a pas de configuration Supabase (DEFAULT_SUPABASE_URL / DEFAULT_SUPABASE_ANON_KEY vides dans le code).");
+                    return;
+                }
+
+                setIsLoadingSharedNotebook(true);
+                fetch(`${supabaseUrl}/rest/v1/notebooks_partages?id=eq.${encodeURIComponent(shareId)}&select=*`, {
+                    headers: {
+                        'apikey': supabaseAnonKey,
+                        'Authorization': `Bearer ${supabaseAnonKey}`
+                    }
+                })
+                    .then(res => {
+                        if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
+                        return res.json();
+                    })
+                    .then(rows => {
+                        if (Array.isArray(rows) && rows.length > 0 && rows[0].data) {
+                            const nb = rows[0].data;
+                            if (nb.notebookTitle) setNotebookTitle(nb.notebookTitle);
+                            if (Array.isArray(nb.sources)) setSources(nb.sources);
+                            if (Array.isArray(nb.chatHistory)) setChatHistory(nb.chatHistory);
+                            if (nb.studioResults) setStudioResults(nb.studioResults);
+                            setIsViewingSharedNotebook(true);
+                        } else {
+                            setSharedLoadError("Ce notebook partagé est introuvable : le lien est peut-être invalide ou a expiré.");
+                        }
+                    })
+                    .catch(() => setSharedLoadError("Impossible de charger le notebook partagé (réseau, ou règles RLS Supabase manquantes)."))
+                    .finally(() => setIsLoadingSharedNotebook(false));
+            }, []); // une seule fois, au chargement de la page
+
+            // Quitte le mode lecture seule et repasse en édition locale normale
+            const handleDuplicateSharedNotebook = () => {
+                setIsViewingSharedNotebook(false);
+                try {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('share');
+                    window.history.replaceState({}, '', url.toString());
+                } catch (e) {}
+            };
+
+            // Nom d'utilisateur récupéré depuis la page de connexion séparée
+            // (transmis via l'URL : ?user=Jean, ou stocké par la page de login dans localStorage sous 'nb_username')
+            const [currentUsername, setCurrentUsername] = useState('Utilisateur');
+
+            useEffect(() => {
+                const params = new URLSearchParams(window.location.search);
+                const fromUrl = params.get('user') || params.get('username') || params.get('name');
+                let fromStorage = null;
+                try { fromStorage = localStorage.getItem('nb_username'); } catch (e) {}
+                const found = fromUrl || fromStorage;
+                if (found) {
+                    setCurrentUsername(found);
+                    try { localStorage.setItem('nb_username', found); } catch (e) {}
+                }
+            }, []);
+
+            const handleBackToLogin = () => {
+                if (document.referrer && document.referrer !== window.location.href) {
+                    window.location.href = document.referrer;
+                } else {
+                    window.history.back();
+                }
+            };
+
+            // Mettre à jour l'heure chaque seconde
+            useEffect(() => {
+                const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+                return () => clearInterval(timer);
+            }, []);
+
+            // Fonction pour réinitialiser / créer un nouveau notebook
+            const handleNewNotebook = () => {
+                if (sources.length > 0 || chatHistory.length > 1) {
+                    const confirmNew = window.confirm("Voulez-vous créer un nouveau notebook ? Les modifications non sauvegardées seront réinitialisées.");
+                    if (!confirmNew) return;
+                }
+                setSources([]);
+                setChatHistory([
+                    { type: 'ai', text: 'Nouveau notebook initialisé ! Glissez-déposez vos fichiers à gauche ou ajoutez des sources pour commencer.' }
+                ]);
+                setInputQuery('');
+                setNotebookTitle('Notebook sans titre');
+                window.speechSynthesis.cancel();
+                setIsSpeaking(false);
+                setActiveSpeechIndex(null);
+            };
+
+            // Icône principale de l'application (cerveau + diplôme)
+            const HumanRobotIcon = ({ size = 36, className = "mr-2 inline-block" }) => (
+                <img 
+                    src="assets/app_logo.png" 
+                    alt="Logo" 
+                    className={`object-contain drop-shadow-md select-none pointer-events-none ${className}`} 
+                    style={{ width: size, height: size }} 
+                />
+            );
+
+            // --- OUTIL D'AMÉLIORATION DES ICÔNES ---
+            // Bibliothèque d'icônes vectorielles (remplace les émojis) + repli émoji
+            const EMOJI_MAP = {
+                plus: '➕', share: '🔗', folder: '📂', fileText: '📄', mic: '🎙️',
+                bot: '🤖', volume2: '🔊', stop: '⏹️', pin: '📌', upload: '📁',
+                camera: '📷', link: '🔗', cloud: '☁️', clipboard: '📋', edit3: '📝',
+                headphones: '🔊', monitor: '🖥️', brain: '🧠', barChart2: '📊',
+                bookOpen: '📝', helpCircle: '❓', trendingUp: '📈', table: '📋',
+                sparkles: '✨', bulb: '💡', check: '✓', logout: '🚪',
+                play: '▶️', pause: '⏸️', refresh: '🔄', cloudRain: '🌧️', coffee: '☕', music: '🎵',
+                key: '🔑',
+            };
+
+            const renderIconPath = (name) => {
+                switch (name) {
+                    case 'plus': return <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>;
+                    case 'share': return <><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></>;
+                    case 'folder': return <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>;
+                    case 'fileText': return <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></>;
+                    case 'mic': return <><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></>;
+                    case 'bot': return <><rect x="4" y="9" width="16" height="10" rx="2"/><line x1="12" y1="5" x2="12" y2="9"/><circle cx="12" cy="4" r="1" fill={iconColor} stroke="none"/><circle cx="9" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1" fill="currentColor" stroke="none"/><line x1="4" y1="13" x2="2" y2="13"/><line x1="20" y1="13" x2="22" y2="13"/></>;
+                    case 'volume2': return <><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></>;
+                    case 'stop': return <rect x="6" y="6" width="12" height="12" rx="2"/>;
+                    case 'pin': return <><path d="M12 17v5"/><path d="M9 10.8V6a2 2 0 0 1 .2-1L10.5 3h3l1.3 2a2 2 0 0 1 .2 1v4.8a3 3 0 0 0 .8 2L17 14H7l1.2-1.2a3 3 0 0 0 .8-2z"/></>;
+                    case 'upload': return <><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></>;
+                    case 'camera': return <><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></>;
+                    case 'link': return <><path d="M10 13a5 5 0 0 0 7.1 0l2.8-2.8a5 5 0 0 0-7.1-7.1l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.1 0L4.1 13.8a5 5 0 0 0 7.1 7.1l1.5-1.5"/></>;
+                    case 'cloud': return <path d="M18 10h-1.3A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>;
+                    case 'clipboard': return <><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3"/></>;
+                    case 'edit3': return <><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></>;
+                    case 'headphones': return <><path d="M3 14v-3a9 9 0 0 1 18 0v3"/><path d="M21 14a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2h3z"/><path d="M3 14a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2H3z"/></>;
+                    case 'monitor': return <><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></>;
+                    case 'brain': return <><path d="M9.5 2A2.5 2.5 0 0 0 7 4.5 3 3 0 0 0 5 7a3 3 0 0 0-1 5.8A3 3 0 0 0 6 18a2.5 2.5 0 0 0 3.5 2.3A2.5 2.5 0 0 0 12 22V4a2.5 2.5 0 0 0-2.5-2z"/><path d="M14.5 2A2.5 2.5 0 0 1 17 4.5 3 3 0 0 1 19 7a3 3 0 0 1 1 5.8A3 3 0 0 1 18 18a2.5 2.5 0 0 1-3.5 2.3A2.5 2.5 0 0 1 12 22V4a2.5 2.5 0 0 1 2.5-2z"/></>;
+                    case 'barChart2': return <><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></>;
+                    case 'bookOpen': return <><path d="M2 5a2 2 0 0 1 2-2h4a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H2z"/><path d="M22 5a2 2 0 0 0-2-2h-4a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h7z"/></>;
+                    case 'helpCircle': return <><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4"/><line x1="12" y1="17" x2="12.01" y2="17"/></>;
+                    case 'trendingUp': return <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>;
+                    case 'table': return <><rect x="3" y="4" width="18" height="16" rx="1"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="4" x2="9" y2="20"/></>;
+                    case 'sparkles': return <><path d="M12 3l1.4 4.3L18 9l-4.6 1.7L12 15l-1.4-4.3L6 9l4.6-1.7z"/><path d="M19 15l.6 1.9L21 18l-1.9.6L19 21l-.6-1.9L16 18l1.9-.6z"/></>;
+                    case 'check': return <polyline points="20 6 9 17 4 12"/>;
+                    case 'bulb': return <><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a6 6 0 0 0-4 10.5c.6.5 1 1.3 1 2.5h6c0-1.2.4-2 1-2.5A6 6 0 0 0 12 2z"/></>;
+                    case 'logout': return <><path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3"/><polyline points="15 17 20 12 15 7"/><line x1="20" y1="12" x2="9" y2="12"/></>;
+                    case 'arrowLeft': return <><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></>;
+                    case 'play': return <polygon points="5 3 19 12 5 21 5 3"/>;
+                    case 'pause': return <><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></>;
+                    case 'refresh': return <><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></>;
+                    case 'cloudRain': return <><path d="M20 16.2A4.5 4.5 0 0 0 17.5 8h-1.8A7 7 0 1 0 4 14.9"/><line x1="8" y1="19" x2="8" y2="21"/><line x1="12" y1="19" x2="12" y2="21"/><line x1="16" y1="19" x2="16" y2="21"/></>;
+                    case 'coffee': return <><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></>;
+                    case 'music': return <><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></>;
+                    case 'key': return <><circle cx="7.5" cy="15.5" r="4.5"/><path d="M21 3l-9.9 9.9"/><path d="M15.5 8.5l2 2"/><path d="M18.5 5.5l2 2"/></>;
+                    default: return <circle cx="12" cy="12" r="9"/>;
+                }
+            };
+
+            // Icône universelle : bascule entre le rendu émoji classique et le style vectoriel choisi
+            const Icon = ({ name, size = 20, className = '', strokeOverride }) => {
+                if (iconStyle === 'emoji') {
+                    return <span className={className} style={{ fontSize: size * 0.85, lineHeight: 1, display: 'inline-flex' }}>{EMOJI_MAP[name] || '❔'}</span>;
+                }
+                return (
+                    <svg
+                        width={size} height={size} viewBox="0 0 24 24" fill="none"
+                        stroke={strokeOverride || iconColor} strokeWidth="2"
+                        strokeLinecap="round" strokeLinejoin="round"
+                        className={className} style={{ flexShrink: 0 }}
+                    >
+                        {renderIconPath(name)}
+                    </svg>
+                );
+            };
+
+            const ICON_COLOR_PRESETS = ['#a8c7fa', '#a8fab0', '#c7a8fa', '#fab8a8', '#fad9a8', '#f5f5f5'];
+
+            const readFileContent = (file) => {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.onerror = () => resolve(`[Fichier : ${file.name}]`);
+                    if (file.type.startsWith('text/') || /\.(txt|md|csv|json|js|html|css|py|xml|log|ts)$/i.test(file.name)) {
+                        reader.readAsText(file);
+                    } else {
+                        resolve(`[Document joint : ${file.name} - taille: ${(file.size / 1024).toFixed(1)} Ko]`);
+                    }
+                });
+            };
+
+            const addSource = (sourceName, content = '') => {
+                setSources(prev => [...prev, { 
+                    name: sourceName, 
+                    content: content || `Source : ${sourceName}`,
+                    id: Date.now() + Math.random() 
+                }]);
+                setIsModalOpen(false);
+            };
+
+            const removeSource = (id) => {
+                setSources(sources.filter(s => s.id !== id));
+            };
+
+            // Gestionnaire de fichiers glissés-déposés
+            const handleDrop = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const droppedFiles = Array.from(e.dataTransfer.files);
+                if (droppedFiles.length > 0) {
+                    const newSources = [];
+                    for (const file of droppedFiles) {
+                        const content = await readFileContent(file);
+                        newSources.push({
+                            name: file.name,
+                            content: content,
+                            id: Date.now() + Math.random()
+                        });
+                    }
+                    setSources(prev => [...prev, ...newSources]);
+                    if (notebookTitle === 'Notebook sans titre' && droppedFiles[0].name) {
+                        setNotebookTitle(droppedFiles[0].name.split('.')[0] + ' (Notebook)');
+                    }
+                }
+            };
+
+            const handleFileUpload = async (e) => {
+                const files = Array.from(e.target.files);
+                if (files.length === 0) return;
+                const newSources = [];
+                for (const file of files) {
+                    const content = await readFileContent(file);
+                    newSources.push({
+                        name: file.name,
+                        content: content,
+                        id: Date.now() + Math.random()
+                    });
+                }
+                setSources(prev => [...prev, ...newSources]);
+                if (notebookTitle === 'Notebook sans titre' && files[0]?.name) {
+                    setNotebookTitle(files[0].name.split('.')[0] + ' (Notebook)');
+                }
+                setIsModalOpen(false);
+                e.target.value = '';
+            };
+
+            const handleDragOver = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
+
+            // --- FONCTIONNALITÉ : Speech-to-Text (Reconnaissance vocale) ---
+            const toggleSpeechRecognition = () => {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                    alert("Votre navigateur ne supporte pas la reconnaissance vocale. Veuillez utiliser Google Chrome.");
+                    return;
+                }
+
+                if (isListening) {
+                    setIsListening(false);
+                    return;
+                }
+
+                const recognition = new SpeechRecognition();
+                recognition.lang = 'fr-FR';
+                recognition.interimResults = false;
+                recognition.maxAlternatives = 1;
+
+                recognition.onstart = () => {
+                    setIsListening(true);
+                };
+
+                recognition.onresult = (event) => {
+                    const speechResult = event.results[0][0].transcript;
+                    setInputQuery(prev => (prev ? prev + " " + speechResult : speechResult));
+                };
+
+                recognition.onerror = (event) => {
+                    console.error("Erreur de reconnaissance vocale", event.error);
+                    setIsListening(false);
+                };
+
+                recognition.onend = () => {
+                    setIsListening(false);
+                };
+
+                recognition.start();
+            };
+
+            // --- FONCTIONNALITÉ : Text-to-Speech (Synthèse vocale) ---
+            const speakText = (text, index) => {
+                if (!('speechSynthesis' in window)) {
+                    alert("La synthèse vocale n'est pas supportée par votre navigateur.");
+                    return;
+                }
+
+                if (isSpeaking && activeSpeechIndex === index) {
+                    window.speechSynthesis.cancel();
+                    setIsSpeaking(false);
+                    setActiveSpeechIndex(null);
+                    return;
+                }
+
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'fr-FR';
+                utterance.onend = () => {
+                    setIsSpeaking(false);
+                    setActiveSpeechIndex(null);
+                };
+                utterance.onerror = () => {
+                    setIsSpeaking(false);
+                    setActiveSpeechIndex(null);
+                };
+
+                setIsSpeaking(true);
+                setActiveSpeechIndex(index);
+                window.speechSynthesis.speak(utterance);
+            };
+
+            // --- FONCTIONNALITÉ : Scan Papier / Extraction de texte (OCR simulé) ---
+            const handleScanPaper = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                setIsScanning(true);
+                const fileName = file.name;
+
+                setTimeout(() => {
+                    const simulatedExtractedText = `[Extrait scanné du document "${fileName}"] : \nDocument scanné avec succès. Les concepts clés, schémas et notes manuscrites ont été numérisés et sont prêts à être analysés dans le chat et dans le Studio.`;
+                    
+                    setSources(prev => [...prev, { 
+                        name: `Scan : ${fileName}`, 
+                        content: simulatedExtractedText,
+                        id: Date.now() + Math.random() 
+                    }]);
+                    setChatHistory(prev => [
+                        ...prev,
+                        { type: 'human', text: `📸 Scan de document papier : ${fileName}` },
+                        { type: 'ai', text: simulatedExtractedText }
+                    ]);
+                    setIsScanning(false);
+                    if (notebookTitle === 'Notebook sans titre') {
+                        setNotebookTitle(`Scan - ${fileName.split('.')[0]}`);
+                    }
+                }, 1500);
+            };
+
+            const handleChatSubmit = async (e) => {
+                e.preventDefault();
+                if (!inputQuery.trim() || isGenerating) return;
+
+                const userQuestion = inputQuery.trim();
+                const newQuestion = { type: 'human', text: userQuestion };
+                const newHistory = [...chatHistory, newQuestion];
+                setChatHistory(newHistory);
+                setInputQuery('');
+                setIsGenerating(true);
+
+                try {
+                    const sourcesContext = compileSourcesContext();
+                    const systemPrompt = `Tu es l'assistant IA intelligent de Notebook IA.
+${sourcesContext ? `Voici les sources documentaires de l'utilisateur sur lesquelles tu dois te baser pour répondre avec rigueur et précision :\n\n${sourcesContext}\n\nSi la réponse ne figure pas dans les sources, indique-le clairement tout en apportant une réponse avec tes connaissances générales.` : "L'utilisateur n'a pas encore ajouté de sources détaillées dans ce notebook. Réponds à sa question de façon claire, complète et chaleureuse, en lui suggérant d'ajouter des documents à gauche pour une analyse personnalisée."}
+Réponds toujours en français, avec clarté, pertinence et une mise en page soignée.`;
+
+                    // Transmettre les derniers échanges pour le contexte conversationnel
+                    const recentDialog = chatHistory.slice(-4).map(m => `${m.type === 'human' ? 'Utilisateur' : 'Assistant'}: ${m.text}`).join('\n');
+                    const fullPrompt = `${recentDialog ? `Contexte des échanges précédents :\n${recentDialog}\n\n` : ''}Question de l'utilisateur : ${userQuestion}`;
+
+                    const aiResponse = await callAI(fullPrompt, systemPrompt);
+                    setChatHistory([...newHistory, { type: 'ai', text: aiResponse }]);
+                } catch (err) {
+                    setChatHistory([...newHistory, { 
+                        type: 'ai', 
+                        text: `⚠️ Erreur lors de la génération : ${err.message || 'Impossible de joindre le service IA'}.\nVérifiez vos clés API ou ajoutez-en de nouvelles via le bouton « Clés API » en haut.` 
+                    }]);
+                } finally {
+                    setIsGenerating(false);
+                }
+            };
+
+            const studioTools = [
+                { id: 'iconstyle', icon: 'sparkles', title: 'Style des icônes', badge: 'Outil', hoverLabel: 'Personnaliser', onClick: () => setIsIconModalOpen(true) },
+                { id: 'audio', icon: 'headphones', title: 'Résumé audio', desc: 'Génère un résumé audio des sources sélectionnées.' },
+                { id: 'video', icon: 'monitor', title: 'Résumé vidéo', desc: 'Génère une vidéo explicative à partir des sources.' },
+                { id: 'mind', icon: 'brain', title: 'Carte mentale', desc: 'Construit une carte mentale des concepts clés.' },
+                { id: 'report', icon: 'barChart2', title: 'Rapports', badge: 'Nouveau !', desc: 'Produit un rapport structuré sur vos sources.' },
+                { id: 'flash', icon: 'bookOpen', title: "Fiches d'étude", desc: "Crée des fiches de révision question/réponse." },
+                { id: 'quiz', icon: 'helpCircle', title: 'Quiz', desc: 'Génère un quiz basé sur le contenu des sources.' },
+                { id: 'info', icon: 'trendingUp', title: 'Infographie', desc: 'Compose une infographie synthétique.' },
+                { id: 'data', icon: 'table', title: 'Tableau de données', desc: 'Extrait les données sous forme de tableau.' },
+            ];
+
+            return (
+                <div className="flex flex-col h-screen">
+                    
+                    {/* Input caché global pour le scan papier */}
+                    <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleScanPaper} 
+                        accept="image/*,.pdf" 
+                        className="hidden" 
+                    />
+
+                    {/* Input caché pour l'import de documents texte et sources */}
+                    <input 
+                        type="file" 
+                        ref={docFileInputRef} 
+                        onChange={handleFileUpload} 
+                        multiple 
+                        accept=".txt,.md,.pdf,.doc,.docx,.csv,.json,.html,.py,.js,.ts" 
+                        className="hidden" 
+                    />
+
+                    {/* En-tête épuré */}
+                    <header className="h-[60px] flex justify-between items-center px-5 border-b border-nb-border shrink-0 z-50 bg-nb-main">
+                        <div className="flex items-center gap-3 text-lg font-medium tracking-tight">
+                            <a
+                                href="Dashboard.html"
+                                title="Retour au Dashboard"
+                                className="w-8 h-8 flex items-center justify-center rounded-full bg-transparent border border-nb-border text-nb-text-main hover:bg-nb-hover transition cursor-pointer shrink-0"
+                            >
+                                <Icon name="arrowLeft" size={16} />
+                            </a>
+                            <HumanRobotIcon />
+                            <span className="truncate max-w-[220px]" title={notebookTitle}>{notebookTitle}</span>
+                            
+                            {/* Affichage de l'heure en haut */}
+                            <div className="hidden md:flex items-center gap-1.5 bg-nb-card border border-nb-border px-3 py-1 rounded-full text-xs font-mono text-nb-accent">
+                                <span>{placeLabel && `${placeLabel} · `}{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2.5">
+                            {/* Bouton de gestion des Clés API */}
+                            <button
+                                onClick={() => setIsApiModalOpen(true)}
+                                className="flex items-center gap-1.5 bg-nb-card border border-nb-accent/40 text-nb-accent px-3 py-1.5 rounded-full text-sm hover:bg-nb-hover transition cursor-pointer"
+                                title="Gérer et ajouter vos clés API (Gemini & Groq)"
+                            >
+                                <span className="w-2 h-2 rounded-full bg-green-400"></span>
+                                <Icon name="key" size={15} strokeOverride="#a8c7fa" />
+                                <span className="hidden sm:inline font-medium">Clés API</span>
+                            </button>
+
+                            <button
+                                onClick={() => setIsFocusOpen(prev => !prev)}
+                                className={`flex items-center gap-1.5 border px-4 py-1.5 rounded-full text-sm transition cursor-pointer ${isFocusOpen ? 'bg-nb-accent text-nb-main border-nb-accent' : 'bg-transparent border-nb-border text-nb-text-main hover:bg-nb-hover'}`}
+                            >
+                                <Icon name="headphones" size={15} strokeOverride={isFocusOpen ? '#131314' : undefined} /> <span className="hidden sm:inline">Focus</span>
+                            </button>
+                            <button 
+                                onClick={handleNewNotebook}
+                                className="bg-transparent border border-nb-border text-nb-text-main px-4 py-1.5 rounded-full text-sm hover:bg-nb-hover transition cursor-pointer flex items-center gap-1.5"
+                            >
+                                <Icon name="plus" size={15} /> <span className="hidden sm:inline">Nouveau Notebook</span>
+                            </button>
+                            <button onClick={handleShare} className="flex items-center gap-1.5 bg-transparent border border-nb-border text-nb-text-main px-4 py-1.5 rounded-full text-sm hover:bg-nb-hover transition cursor-pointer">
+                                <Icon name="share" size={15} /> <span className="hidden sm:inline">Partager</span>
+                            </button>
+                            <div className="relative">
+                                <button
+                                    onClick={() => setIsUserMenuOpen(prev => !prev)}
+                                    className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white font-medium text-sm ml-1 cursor-pointer ring-2 ring-nb-border ring-offset-2 ring-offset-nb-main"
+                                    title={currentUsername}
+                                >
+                                    {currentUsername.charAt(0).toUpperCase()}
+                                </button>
+
+                                {isUserMenuOpen && (
+                                    <>
+                                        <div className="fixed inset-0 z-40" onClick={() => setIsUserMenuOpen(false)}></div>
+                                        <div className="absolute right-0 top-11 w-56 bg-nb-panel border border-nb-border rounded-2xl shadow-2xl z-50 p-2 animate-fadeIn">
+                                            <div className="px-3 py-2.5 border-b border-nb-border mb-1">
+                                                <p className="text-sm font-medium text-nb-text-main truncate">{currentUsername}</p>
+                                                <p className="text-xs text-nb-text-muted truncate">{currentUsername.toLowerCase().replace(/\s+/g, '.')}@notebook.ia</p>
+                                            </div>
+                                            <button
+                                                onClick={() => { setIsUserMenuOpen(false); setIsLogoutModalOpen(true); }}
+                                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-red-400 hover:bg-nb-hover transition cursor-pointer text-left"
+                                            >
+                                                <Icon name="logout" size={16} strokeOverride="#f87171" />
+                                                Déconnexion
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Bannière : consultation d'un notebook partagé en lecture seule */}
+                    {isViewingSharedNotebook && (
+                        <div className="bg-nb-accent/10 border-b border-nb-accent/30 px-5 py-2 flex items-center justify-between gap-3 text-xs shrink-0">
+                            <div className="flex items-center gap-2 text-nb-accent">
+                                <Icon name="link" size={14} strokeOverride="#a8c7fa" />
+                                <span>Vous consultez une version <strong>partagée en lecture seule</strong> de ce notebook.</span>
+                            </div>
+                            <button
+                                onClick={handleDuplicateSharedNotebook}
+                                className="bg-nb-accent text-nb-main px-3 py-1 rounded-full font-medium hover:opacity-90 transition cursor-pointer shrink-0"
+                            >
+                                Continuer en édition
+                            </button>
+                        </div>
+                    )}
+                    {isLoadingSharedNotebook && (
+                        <div className="bg-nb-card border-b border-nb-border px-5 py-2 flex items-center gap-2 text-xs text-nb-text-muted shrink-0">
+                            <div className="w-3.5 h-3.5 border-2 border-nb-border border-t-nb-accent rounded-full animate-spin"></div>
+                            Chargement du notebook partagé…
+                        </div>
+                    )}
+                    {sharedLoadError && (
+                        <div className="bg-red-950/40 border-b border-red-800/50 px-5 py-2 text-xs text-red-300 shrink-0">
+                            ⚠️ {sharedLoadError}
+                        </div>
+                    )}
+
+                    {/* Corps Principal */}
+                    <div className="flex flex-1 h-[calc(100vh-60px)] overflow-hidden">
+                        
+                        {/* Panneau de Gauche : Sources avec Drag & Drop */}
+                        <aside className="w-[300px] bg-nb-panel border-r border-nb-border flex flex-col p-4 shrink-0 z-10">
+                            <h3 className="text-[0.95rem] font-semibold mb-3 px-1">Sources</h3>
+                            <button 
+                                onClick={() => setIsModalOpen(true)}
+                                className="bg-nb-text-main text-nb-main border-none py-2.5 px-4 rounded-full font-semibold text-center text-sm mb-4 hover:opacity-90 transition cursor-pointer flex items-center justify-center gap-2"
+                            >
+                                <Icon name="plus" size={15} /> Ajouter des sources
+                            </button>
+                            
+                            {/* Zone interactive de glisser-déposer */}
+                            <div 
+                                className="flex-1 overflow-y-auto pr-1 space-y-2 flex flex-col"
+                                onDragOver={handleDragOver}
+                                onDrop={handleDrop}
+                            >
+                                {sources.length === 0 ? (
+                                    <div 
+                                        className="border-2 border-dashed border-nb-border hover:border-nb-accent rounded-xl flex flex-col items-center justify-center text-center p-6 text-nb-text-muted text-sm h-full transition cursor-pointer"
+                                        onClick={() => setIsModalOpen(true)}
+                                    >
+                                        <Icon name="folder" size={32} className="mb-2 mx-auto" strokeOverride="#8e918f" />
+                                        <p><strong>Glissez-déposez vos fichiers ici</strong><br />
+                                        ou cliquez pour en ajouter.<br />
+                                        <span className="text-xs text-nb-text-muted mt-2 block">(PDF, Docs, Images, Scan...)</span></p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="space-y-2">
+                                            {sources.map((source) => (
+                                                <div key={source.id} className="bg-nb-card border border-nb-border rounded-lg p-3 flex items-center justify-between group hover:bg-nb-hover transition cursor-pointer">
+                                                    <div className="flex items-center gap-3 truncate">
+                                                        <Icon name="fileText" size={16} strokeOverride="#8e918f" />
+                                                        <span className="text-sm truncate" title={source.name}>{source.name}</span>
+                                                    </div>
+                                                    <button 
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            removeSource(source.id);
+                                                        }}
+                                                        className="text-nb-text-muted opacity-0 group-hover:opacity-100 transition hover:text-red-400 text-lg px-1"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="border border-dashed border-nb-border/60 rounded-xl p-4 text-center text-nb-text-muted text-xs mt-2 hover:border-nb-accent transition">
+                                            Glissez d'autres fichiers ici
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </aside>
+
+                        {/* Panneau Central : Espace d'échange */}
+                        <main className="flex-1 flex flex-col p-8 bg-nb-main overflow-y-auto relative">
+                            
+                            <div className="flex-1 max-w-[850px] w-full mx-auto space-y-6 pb-28 flex flex-col justify-end">
+                                {chatHistory.map((msg, index) => (
+                                    <div key={index} className={`flex items-start gap-4 ${msg.type === 'human' ? 'justify-end' : ''}`}>
+                                        {msg.type === 'ai' && (
+                                            <div className="w-9 h-9 rounded-full bg-nb-accent flex items-center justify-center text-nb-main shrink-0 mt-1">
+                                                <Icon name="bot" size={18} strokeOverride="#131314" />
+                                            </div>
+                                        )}
+                                        <div className={`p-5 rounded-2xl max-w-[70%] text-[15px] leading-relaxed shadow-lg relative group ${msg.type === 'human' ? 'bg-nb-accent text-nb-main rounded-br-none' : 'bg-nb-panel text-nb-text-main rounded-bl-none'}`}>
+                                            {msg.text}
+
+                                            {/* Bouton Synthèse Vocale (Text-to-Speech) pour les messages de l'IA */}
+                                            {msg.type === 'ai' && (
+                                                <button 
+                                                    onClick={() => speakText(msg.text, index)}
+                                                    className={`absolute -bottom-3 right-4 bg-nb-card border border-nb-border hover:bg-nb-hover text-nb-text-main text-xs px-2.5 py-1 rounded-full shadow transition flex items-center gap-1 cursor-pointer ${isSpeaking && activeSpeechIndex === index ? 'text-nb-accent border-nb-accent animate-pulse' : ''}`}
+                                                    title="Écouter la réponse"
+                                                >
+                                                    <Icon name={isSpeaking && activeSpeechIndex === index ? 'stop' : 'volume2'} size={13} />
+                                                    <span>{isSpeaking && activeSpeechIndex === index ? 'Arrêter' : 'Écouter'}</span>
+                                                </button>
+                                            )}
+                                        </div>
+                                        {msg.type === 'human' && (
+                                            <div className="w-9 h-9 rounded-full bg-purple-600 flex items-center justify-center text-white font-medium text-sm shrink-0 mt-1">{currentUsername.charAt(0).toUpperCase()}</div>
+                                        )}
+                                    </div>
+                                ))}
+                                {isGenerating && (
+                                    <div className="flex items-start gap-4">
+                                        <div className="w-9 h-9 rounded-full bg-nb-accent flex items-center justify-center text-nb-main shrink-0 mt-1"><Icon name="bot" size={18} strokeOverride="#131314" /></div>
+                                        <div className="p-5 rounded-2xl bg-nb-panel text-nb-text-muted rounded-bl-none flex items-center gap-1.5">
+                                            <div className="w-2 h-2 bg-nb-text-muted rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                                            <div className="w-2 h-2 bg-nb-text-muted rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                            <div className="w-2 h-2 bg-nb-text-muted rounded-full animate-bounce"></div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Barre de saisie fixe en bas avec Speech-to-Text */}
+                            <div className="fixed bottom-0 left-[300px] right-[340px] bg-gradient-to-t from-nb-main via-nb-main to-transparent pt-6 pb-6 px-8">
+                                <div className="max-w-[850px] w-full mx-auto">
+                                    <form onSubmit={handleChatSubmit} className="bg-nb-panel border border-nb-border rounded-[30px] px-5 py-3.5 flex items-center gap-3 shadow-2xl">
+                                        
+                                        {/* Bouton Dictée vocale (Speech-to-Text) */}
+                                        <button 
+                                            type="button"
+                                            onClick={toggleSpeechRecognition}
+                                            className={`w-9 h-9 rounded-full flex items-center justify-center transition cursor-pointer shrink-0 ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-nb-card border border-nb-border text-nb-text-muted hover:text-white hover:bg-nb-hover'}`}
+                                            title={isListening ? "Arrêter l'écoute..." : "Dicter votre question vocalement"}
+                                        >
+                                            <Icon name="mic" size={16} strokeOverride={isListening ? '#ffffff' : undefined} />
+                                        </button>
+
+                                        <input 
+                                            type="text" 
+                                            placeholder={isListening ? "Écoute en cours... Parlez maintenant..." : "Posez une question, demandez un résumé ou créez quelque chose..."} 
+                                            value={inputQuery}
+                                            onChange={(e) => setInputQuery(e.target.value)}
+                                            className="flex-1 bg-transparent border-none text-nb-text-main text-[15px] outline-none placeholder:text-nb-text-muted"
+                                        />
+                                        
+                                        <span className="text-xs text-nb-text-muted font-medium bg-nb-card px-2.5 py-1 rounded-full hidden sm:inline">
+                                            {sources.length} {sources.length === 1 ? 'source' : 'sources'} active{sources.length !== 1 ? 's' : ''}
+                                        </span>
+
+                                        <button 
+                                            type="submit" 
+                                            disabled={isGenerating}
+                                            className={`bg-nb-accent border-none w-10 h-10 rounded-full flex items-center justify-center text-nb-main font-bold cursor-pointer transition ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-95'}`}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-5 h-5">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
+                                            </svg>
+                                        </button>
+                                    </form>
+                                    <div className="text-center text-xs text-nb-text-muted mt-3.5 font-light">
+                                        Vérifiez les informations importantes. L'assistant peut parfois se tromper.
+                                    </div>
+                                </div>
+                            </div>
+                        </main>
+
+                        {/* Panneau de Droite : Studio IA */}
+                        <aside className="w-[340px] bg-nb-panel border-l border-nb-border flex flex-col p-5 overflow-y-auto shrink-0 z-10">
+                            <h3 className="text-[0.95rem] font-semibold mb-1 px-1">Studio</h3>
+                            <p className="text-sm text-nb-text-muted mb-5 px-1 leading-normal">Transformez vos sources en outils d'apprentissage interactifs.</p>
+                            
+                            <div className="grid grid-cols-2 gap-3">
+                                {studioTools.map((tool) => (
+                                    <button 
+                                        key={tool.id} 
+                                        onClick={tool.onClick || (() => openStudioTool(tool))}
+                                        className={`relative bg-nb-card border rounded-xl p-4 text-left cursor-pointer hover:bg-nb-hover transition flex flex-col gap-2.5 group ${tool.id === 'iconstyle' ? 'border-nb-accent/40' : 'border-nb-border'}`}
+                                    >
+                                        {studioResults[tool.id] && (
+                                            <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-green-500"></span>
+                                        )}
+                                        <Icon name={tool.icon} size={22} />
+                                        <div className="text-sm font-medium flex flex-col gap-1.5 text-nb-text-main">
+                                            {tool.title}
+                                            {tool.badge && (
+                                                <span className="text-[10px] font-semibold bg-blue-900/60 text-nb-accent px-2 py-0.5 rounded-full w-fit tracking-wider uppercase">
+                                                    {tool.badge}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <span className="text-xs text-nb-text-muted mt-1 opacity-0 group-hover:opacity-100 transition">{tool.hoverLabel || (studioResults[tool.id] ? 'Voir' : 'Générer')} →</span>
+                                    </button>
+                                ))}
+                            </div>
+
+                            <button className="mt-10 w-full bg-transparent border border-nb-border text-nb-text-main py-3 px-4 rounded-full text-center text-sm hover:bg-nb-hover transition cursor-pointer flex items-center justify-center gap-2.5 font-medium">
+                                <Icon name="pin" size={15} /> Voir les notes enregistrées
+                            </button>
+                        </aside>
+
+                    </div>
+
+                    {/* Panneau flottant : Mode Focus (minuteur Pomodoro + sons d'ambiance) */}
+                    {isFocusOpen && (
+                        <div className="fixed bottom-24 right-6 w-[300px] bg-nb-panel border border-nb-border rounded-3xl p-5 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.6)] z-[90] animate-scaleIn">
+                            <div className="flex justify-between items-center mb-4">
+                                <div className="flex items-center gap-2 text-sm font-semibold">
+                                    <Icon name="headphones" size={16} /> Mode Focus
+                                </div>
+                                <button onClick={() => setIsFocusOpen(false)} className="bg-transparent border-none text-nb-text-muted text-2xl cursor-pointer hover:text-white leading-none">×</button>
+                            </div>
+
+                            <div className="bg-nb-card border border-nb-border rounded-2xl p-4 mb-4 text-center">
+                                <div className="flex justify-center gap-2 mb-3">
+                                    {[['focus', 'Focus'], ['short', 'Pause'], ['long', 'Pause+']].map(([key, label]) => (
+                                        <button key={key} onClick={() => switchPomoMode(key)}
+                                            className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition cursor-pointer ${pomoMode === key ? 'bg-nb-accent text-nb-main' : 'bg-nb-hover text-nb-text-muted hover:text-white'}`}>
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="text-4xl font-mono font-semibold tracking-wider mb-3">{formatTime(timeLeft)}</div>
+                                <div className="flex justify-center gap-2 mb-2">
+                                    <button onClick={toggleTimer} className="w-10 h-10 rounded-full bg-nb-text-main text-nb-main flex items-center justify-center hover:opacity-90 transition cursor-pointer">
+                                        <Icon name={isTimerRunning ? 'pause' : 'play'} size={16} strokeOverride="#131314" />
+                                    </button>
+                                    <button onClick={resetTimer} className="w-10 h-10 rounded-full border border-nb-border text-nb-text-main flex items-center justify-center hover:bg-nb-hover transition cursor-pointer">
+                                        <Icon name="refresh" size={15} />
+                                    </button>
+                                </div>
+                                <p className="text-[11px] text-nb-text-muted">{pomoCount} pomodoro{pomoCount !== 1 ? 's' : ''} terminé{pomoCount !== 1 ? 's' : ''}</p>
+                            </div>
+
+                            <h4 className="text-[11px] uppercase tracking-wider text-nb-text-muted mb-2 font-semibold px-1">Ambiance sonore</h4>
+                            <div className="grid grid-cols-3 gap-2 mb-3">
+                                {[['rain', 'cloudRain', 'Pluie'], ['cafe', 'coffee', 'Café'], ['lofi', 'music', 'Lofi']].map(([key, icon, label]) => (
+                                    <button key={key} onClick={() => toggleAmbientSound(key)}
+                                        className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border text-[11px] transition cursor-pointer ${activeSound === key ? 'border-nb-accent bg-nb-accent/10 text-nb-accent' : 'border-nb-border bg-nb-card text-nb-text-muted hover:bg-nb-hover'}`}>
+                                        <Icon name={icon} size={18} strokeOverride={activeSound === key ? '#a8c7fa' : undefined} />
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                            <h4 className="text-[11px] uppercase tracking-wider text-nb-text-muted mb-2 font-semibold px-1">Lien personnalisé</h4>
+                            <div className="flex items-center gap-2 mb-1">
+                                <input
+                                    type="text"
+                                    placeholder="Coller un lien audio (.mp3, .wav...)"
+                                    value={customUrl}
+                                    onChange={(e) => setCustomUrl(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && toggleCustomSound()}
+                                    className="flex-1 bg-nb-card border border-nb-border rounded-full px-3 py-1.5 text-xs text-nb-text-main outline-none placeholder:text-nb-text-muted"
+                                />
+                                <button onClick={toggleCustomSound}
+                                    className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition cursor-pointer border ${activeSound === 'custom' ? 'bg-nb-accent border-nb-accent text-nb-main' : 'bg-nb-card border-nb-border text-nb-text-muted hover:bg-nb-hover'}`}
+                                    title={activeSound === 'custom' ? 'Arrêter' : 'Lire'}
+                                >
+                                    <Icon name={activeSound === 'custom' ? 'pause' : 'play'} size={13} strokeOverride={activeSound === 'custom' ? '#131314' : undefined} />
+                                </button>
+                            </div>
+                            <p className="text-[10px] text-nb-text-muted px-1 mb-3">Lien direct vers un fichier audio uniquement — pas de liens YouTube ou Spotify.</p>
+                            <audio ref={customAudioRef} className="hidden" />
+
+                            {activeSound && (
+                                <div className="flex items-center gap-2 px-1">
+                                    <Icon name="volume2" size={14} strokeOverride="#8e918f" />
+                                    <input type="range" min="0" max="1" step="0.01" value={soundVolume}
+                                        onChange={(e) => setSoundVolume(parseFloat(e.target.value))}
+                                        className="flex-1 accent-nb-accent cursor-pointer" />
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Modale d'ajout de sources */}
+                    {isModalOpen && (
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4 animate-fadeIn backdrop-blur-sm">
+                            <div className="bg-nb-panel border border-nb-border rounded-3xl w-[600px] p-8 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] animate-scaleIn">
+                                <div className="flex justify-between items-center mb-8">
+                                    <h2 className="text-2xl font-normal tracking-tight">Ajouter à ce notebook</h2>
+                                    <button 
+                                        onClick={() => setIsModalOpen(false)}
+                                        className="bg-transparent border-none text-nb-text-muted text-3xl cursor-pointer hover:text-white leading-none"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-3 gap-4">
+                                    {[
+                                        { icon: 'upload', title: 'Importer des fichiers', desc: 'PDF, Docs, Images...' },
+                                        { icon: 'camera', title: 'Scanner un papier', desc: 'OCR de documents' },
+                                        { icon: 'link', title: 'Sites Web', desc: 'Coller une URL' },
+                                        { icon: 'cloud', title: 'Google Drive', desc: 'Sélectionner depuis votre Drive' },
+                                        { icon: 'clipboard', title: 'Texte copié', desc: 'Coller directement du texte' },
+                                        { icon: 'edit3', title: 'Rédiger une note', desc: 'Créer une source vierge' }
+                                    ].map((item, idx) => (
+                                        <button 
+                                            key={idx}
+                                            onClick={() => {
+                                                if (item.title === 'Scanner un papier') {
+                                                    setIsModalOpen(false);
+                                                    fileInputRef.current.click();
+                                                } else if (item.title === 'Importer des fichiers') {
+                                                    setIsModalOpen(false);
+                                                    docFileInputRef.current.click();
+                                                } else if (item.title === 'Rédiger une note') {
+                                                    const noteTitle = prompt("Titre de votre note :", "Note personnelle");
+                                                    if (noteTitle) {
+                                                        const noteContent = prompt("Contenu de votre note :");
+                                                        addSource(noteTitle, noteContent || "(Note vide)");
+                                                    }
+                                                } else if (item.title === 'Texte copié') {
+                                                    const pasted = prompt("Collez ici le texte ou l'article à analyser :");
+                                                    if (pasted) {
+                                                        addSource("Texte collé", pasted);
+                                                    }
+                                                } else if (item.title === 'Sites Web') {
+                                                    const url = prompt("Collez l'adresse URL du site web :");
+                                                    if (url) {
+                                                        addSource(url, `Source Web : ${url}`);
+                                                    }
+                                                } else {
+                                                    addSource(item.title, `Source : ${item.title}`);
+                                                }
+                                            }}
+                                            className="bg-nb-card border border-nb-border rounded-2xl p-6 text-left cursor-pointer hover:bg-nb-hover transition flex flex-col gap-3 hover:border-nb-accent/30"
+                                        >
+                                            <Icon name={item.icon} size={30} className="mb-1" />
+                                            <span className="font-medium text-nb-text-main text-[15px]">{item.title}</span>
+                                            <span className="text-xs text-nb-text-muted">{item.desc}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="mt-8 text-center text-sm text-nb-text-muted bg-nb-card p-4 rounded-xl flex items-center justify-center gap-2">
+                                    <Icon name="bulb" size={16} /> Conseil pro : Glissez et déposez vos fichiers ou utilisez l'option de scan pour extraire du texte instantanément.
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Espace de génération d'une carte Studio (audio, vidéo, quiz, etc.) */}
+                    {activeStudioTool && (
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4 animate-fadeIn backdrop-blur-sm">
+                            <div className="bg-nb-panel border border-nb-border rounded-3xl w-[600px] max-w-full max-h-[85vh] shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] animate-scaleIn flex flex-col overflow-hidden">
+
+                                {/* En-tête fixe */}
+                                <div className="flex justify-between items-center px-7 pt-7 pb-1 shrink-0">
+                                    <div className="flex items-center gap-2.5 text-xl font-normal tracking-tight">
+                                        <Icon name={activeStudioTool.icon} size={20} />
+                                        <h2>{activeStudioTool.title}</h2>
+                                    </div>
+                                    <button
+                                        onClick={() => setActiveStudioTool(null)}
+                                        className="bg-transparent border-none text-nb-text-muted text-3xl cursor-pointer hover:text-white leading-none"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                                <p className="text-sm text-nb-text-muted px-7 mb-4 shrink-0">{activeStudioTool.desc}</p>
+
+                                {/* Zone de résultat — défile indépendamment si le contenu est long */}
+                                <div className="flex-1 overflow-y-auto px-7 min-h-0">
+                                    <div className="bg-nb-card border border-dashed border-nb-border rounded-2xl min-h-[180px] p-5">
+                                        {isGeneratingStudio ? (
+                                            <div className="flex flex-col items-center justify-center gap-3 text-nb-text-muted text-sm h-full min-h-[150px]">
+                                                <div className="w-6 h-6 border-2 border-nb-border border-t-nb-accent rounded-full animate-spin"></div>
+                                                Génération en cours…
+                                            </div>
+                                        ) : studioResults[activeStudioTool.id] ? (
+                                            <div className="w-full">{renderMarkdown(studioResults[activeStudioTool.id])}</div>
+                                        ) : (
+                                            <div className="flex flex-col items-center justify-center gap-2 text-nb-text-muted text-sm text-center h-full min-h-[150px]">
+                                                <Icon name={activeStudioTool.icon} size={26} strokeOverride="#5f6368" />
+                                                Aucun contenu généré pour l'instant.
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Pied fixe */}
+                                <div className="flex gap-3 px-7 py-5 shrink-0 border-t border-nb-border/50 mt-2">
+                                    <button
+                                        onClick={generateStudioContent}
+                                        disabled={isGeneratingStudio}
+                                        className="flex-1 bg-nb-text-main text-nb-main border-none py-2.5 rounded-full font-semibold text-sm hover:opacity-90 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isGeneratingStudio ? 'Génération…' : studioResults[activeStudioTool.id] ? 'Régénérer' : 'Générer'}
+                                    </button>
+                                    {studioResults[activeStudioTool.id] && !isGeneratingStudio && (
+                                        <button
+                                            onClick={copyStudioResult}
+                                            className="bg-transparent border border-nb-border text-nb-text-main px-5 py-2.5 rounded-full text-sm hover:bg-nb-hover transition cursor-pointer"
+                                        >
+                                            {isStudioResultCopied ? 'Copié !' : 'Copier'}
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setActiveStudioTool(null)}
+                                        className="bg-transparent border border-nb-border text-nb-text-main px-5 py-2.5 rounded-full text-sm hover:bg-nb-hover transition cursor-pointer"
+                                    >
+                                        Fermer
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modale de l'outil : Style des icônes */}
+                    {isIconModalOpen && (
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4 animate-fadeIn backdrop-blur-sm">
+                            <div className="bg-nb-panel border border-nb-border rounded-3xl w-[480px] p-8 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] animate-scaleIn">
+                                <div className="flex justify-between items-center mb-1">
+                                    <div className="flex items-center gap-2 text-2xl font-normal tracking-tight">
+                                        <Icon name="sparkles" size={22} />
+                                        <h2>Style des icônes</h2>
+                                    </div>
+                                    <button 
+                                        onClick={() => setIsIconModalOpen(false)}
+                                        className="bg-transparent border-none text-nb-text-muted text-3xl cursor-pointer hover:text-white leading-none"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                                <p className="text-sm text-nb-text-muted mb-6">Personnalisez le rendu et la couleur des icônes dans toute l'interface.</p>
+
+                                <h4 className="text-xs uppercase tracking-wider text-nb-text-muted mb-2 font-semibold">Rendu</h4>
+                                <div className="grid grid-cols-2 gap-3 mb-6">
+                                    <button
+                                        onClick={() => setIconStyle('vector')}
+                                        className={`rounded-xl p-3.5 border text-left transition flex items-center gap-2.5 ${iconStyle === 'vector' ? 'border-nb-accent bg-nb-accent/10' : 'border-nb-border bg-nb-card hover:bg-nb-hover'}`}
+                                    >
+                                        <Icon name="fileText" size={18} />
+                                        <span className="text-sm font-medium">Vectoriel net</span>
+                                        {iconStyle === 'vector' && <Icon name="check" size={14} className="ml-auto" strokeOverride="#a8c7fa" />}
+                                    </button>
+                                    <button
+                                        onClick={() => setIconStyle('emoji')}
+                                        className={`rounded-xl p-3.5 border text-left transition flex items-center gap-2.5 ${iconStyle === 'emoji' ? 'border-nb-accent bg-nb-accent/10' : 'border-nb-border bg-nb-card hover:bg-nb-hover'}`}
+                                    >
+                                        <span className="text-lg leading-none">📄</span>
+                                        <span className="text-sm font-medium">Emoji classique</span>
+                                        {iconStyle === 'emoji' && <Icon name="check" size={14} className="ml-auto" strokeOverride="#a8c7fa" />}
+                                    </button>
+                                </div>
+
+                                <h4 className="text-xs uppercase tracking-wider text-nb-text-muted mb-2 font-semibold">Couleur des icônes</h4>
+                                <div className={`flex items-center gap-3 mb-6 ${iconStyle === 'emoji' ? 'opacity-40 pointer-events-none' : ''}`}>
+                                    {ICON_COLOR_PRESETS.map((hex) => (
+                                        <button
+                                            key={hex}
+                                            onClick={() => setIconColor(hex)}
+                                            title={hex}
+                                            className={`w-8 h-8 rounded-full border-2 transition ${iconColor === hex ? 'border-white scale-110' : 'border-transparent hover:scale-105'}`}
+                                            style={{ backgroundColor: hex }}
+                                        />
+                                    ))}
+                                </div>
+
+                                <h4 className="text-xs uppercase tracking-wider text-nb-text-muted mb-2 font-semibold">Aperçu</h4>
+                                <div className="bg-nb-card border border-nb-border rounded-xl p-4 flex items-center gap-4 mb-2">
+                                    <Icon name="bot" size={22} />
+                                    <Icon name="mic" size={22} />
+                                    <Icon name="fileText" size={22} />
+                                    <Icon name="brain" size={22} />
+                                    <Icon name="pin" size={22} />
+                                    <Icon name="sparkles" size={22} />
+                                </div>
+
+                                <button
+                                    onClick={() => setIsIconModalOpen(false)}
+                                    className="mt-6 w-full bg-nb-text-main text-nb-main border-none py-2.5 px-4 rounded-full font-semibold text-center text-sm hover:opacity-90 transition cursor-pointer"
+                                >
+                                    Terminé
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Popup de confirmation : Déconnexion */}
+                    {isLogoutModalOpen && (
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4 animate-fadeIn backdrop-blur-sm">
+                            <div className="bg-nb-panel border border-nb-border rounded-3xl w-[380px] p-7 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] animate-scaleIn text-center">
+                                <div className="w-14 h-14 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4">
+                                    <Icon name="logout" size={24} strokeOverride="#f87171" />
+                                </div>
+                                <h2 className="text-lg font-medium mb-1.5">Se déconnecter ?</h2>
+                                <p className="text-sm text-nb-text-muted mb-6">Vous devrez vous reconnecter pour retrouver vos notebooks et vos sources.</p>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setIsLogoutModalOpen(false)}
+                                        className="flex-1 bg-nb-card border border-nb-border text-nb-text-main py-2.5 rounded-full text-sm font-medium hover:bg-nb-hover transition cursor-pointer"
+                                    >
+                                        Annuler
+                                    </button>
+                                    <button
+                                        onClick={() => { setIsLogoutModalOpen(false); setIsLoggedOut(true); }}
+                                        className="flex-1 bg-red-500 border border-red-500 text-white py-2.5 rounded-full text-sm font-medium hover:bg-red-600 transition cursor-pointer"
+                                    >
+                                        Déconnexion
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Écran affiché après déconnexion */}
+                    {isLoggedOut && (
+                        <div className="fixed inset-0 bg-nb-main flex items-center justify-center z-[200] p-4">
+                            <div className="text-center max-w-sm">
+                                <HumanRobotIcon size={64} className="mx-auto mb-4 block" />
+                                <h2 className="text-xl font-medium mt-4 mb-2">Vous êtes déconnecté</h2>
+                                <p className="text-sm text-nb-text-muted mb-6">À bientôt ! Reconnectez-vous pour continuer sur vos notebooks.</p>
+                                <button
+                                    onClick={() => setIsLoggedOut(false)}
+                                    className="bg-nb-text-main text-nb-main border-none py-2.5 px-6 rounded-full font-semibold text-sm hover:opacity-90 transition cursor-pointer"
+                                >
+                                    Se reconnecter
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modale de partage : génère un lien pour le notebook */}
+                    {isShareModalOpen && (
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4 animate-fadeIn backdrop-blur-sm">
+                            <div className="bg-nb-panel border border-nb-border rounded-3xl w-[460px] p-7 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] animate-scaleIn">
+                                <div className="flex justify-between items-center mb-1">
+                                    <div className="flex items-center gap-2 text-xl font-normal tracking-tight">
+                                        <Icon name="share" size={19} />
+                                        <h2>Partager « {notebookTitle} »</h2>
+                                    </div>
+                                    <button
+                                        onClick={() => setIsShareModalOpen(false)}
+                                        className="bg-transparent border-none text-nb-text-muted text-3xl cursor-pointer hover:text-white leading-none"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                                <p className="text-sm text-nb-text-muted mb-5">Toute personne disposant de ce lien pourra consulter ce notebook.</p>
+
+                                {isSharing ? (
+                                    <div className="flex items-center gap-3 text-sm text-nb-text-muted bg-nb-card border border-nb-border rounded-2xl px-4 py-3.5">
+                                        <div className="w-4 h-4 border-2 border-nb-border border-t-nb-accent rounded-full animate-spin shrink-0"></div>
+                                        Enregistrement sur Supabase…
+                                    </div>
+                                ) : shareError ? (
+                                    <div className="text-xs text-red-300 bg-red-950/40 border border-red-800/50 rounded-2xl px-4 py-3.5 leading-relaxed">
+                                        ⚠️ {shareError}
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2 bg-nb-card border border-nb-border rounded-full px-2 py-1.5">
+                                        <Icon name="link" size={16} className="ml-2 shrink-0" strokeOverride="#8e918f" />
+                                        <input
+                                            type="text"
+                                            readOnly
+                                            value={shareUrl}
+                                            onFocus={(e) => e.target.select()}
+                                            className="flex-1 bg-transparent border-none outline-none text-sm text-nb-text-main truncate"
+                                        />
+                                        <button
+                                            onClick={copyShareLink}
+                                            className={`shrink-0 flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition cursor-pointer ${isLinkCopied ? 'bg-green-600 text-white' : 'bg-nb-text-main text-nb-main hover:opacity-90'}`}
+                                        >
+                                            <Icon name={isLinkCopied ? 'check' : 'clipboard'} size={14} strokeOverride={isLinkCopied ? '#ffffff' : undefined} />
+                                            {isLinkCopied ? 'Copié !' : 'Copier'}
+                                        </button>
+                                    </div>
+                                )}
+
+                                <button
+                                    onClick={() => setIsShareModalOpen(false)}
+                                    className="mt-6 w-full bg-transparent border border-nb-border text-nb-text-main py-2.5 px-4 rounded-full font-medium text-center text-sm hover:bg-nb-hover transition cursor-pointer"
+                                >
+                                    Fermer
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modale de gestion des Clés API */}
+                    {isApiModalOpen && (
+                        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-[110] p-4 animate-fadeIn backdrop-blur-sm">
+                            <div className="bg-nb-panel border border-nb-border rounded-3xl w-[620px] max-w-full p-7 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.6)] animate-scaleIn">
+                                <div className="flex justify-between items-center mb-1">
+                                    <div className="flex items-center gap-2.5 text-xl font-normal tracking-tight">
+                                        <Icon name="key" size={22} strokeOverride="#a8c7fa" />
+                                        <h2>Configuration des Clés API</h2>
+                                    </div>
+                                    <button 
+                                        onClick={() => setIsApiModalOpen(false)}
+                                        className="bg-transparent border-none text-nb-text-muted text-3xl cursor-pointer hover:text-white leading-none"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                                <p className="text-xs text-nb-text-muted mb-5">
+                                    Vos requêtes de Chat et Studio utilisent directement ces clés. Le système applique une <strong>rotation automatique</strong> pour contourner les limites de quota (erreur 429).
+                                </p>
+
+                                {/* Statut actuel & Bouton Test */}
+                                <div className="bg-nb-card border border-nb-border/70 rounded-2xl p-3.5 mb-4 flex items-center justify-between text-xs">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-2.5 h-2.5 rounded-full bg-green-400"></span>
+                                        <span className="text-nb-text-muted">Statut :</span>
+                                        <span className="text-nb-text-main font-mono">{apiStatusMessage}</span>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={testApiConnection}
+                                        disabled={isTestingApi}
+                                        className="bg-nb-hover border border-nb-border text-nb-text-main px-3 py-1 rounded-full text-xs hover:border-nb-accent transition cursor-pointer disabled:opacity-50"
+                                    >
+                                        {isTestingApi ? "Test en cours…" : "Tester la connexion"}
+                                    </button>
+                                </div>
+
+                                {apiTestResult && (
+                                    <div className={`p-3 rounded-xl mb-4 text-xs font-mono leading-relaxed ${apiTestResult.success ? 'bg-green-950/60 text-green-300 border border-green-800' : 'bg-red-950/60 text-red-300 border border-red-800'}`}>
+                                        {apiTestResult.success ? '✅ ' : '❌ '}{apiTestResult.text}
+                                    </div>
+                                )}
+
+                                {/* Mode d'utilisation */}
+                                <div className="mb-4">
+                                    <label className="text-xs font-semibold uppercase tracking-wider text-nb-text-muted block mb-2">Mode de fonctionnement</label>
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                        {[
+                                            { id: 'auto', label: 'Auto (Tous)' },
+                                            { id: 'gemini', label: 'Gemini seul' },
+                                            { id: 'openai', label: 'OpenAI seul' },
+                                            { id: 'groq', label: 'Groq seul' }
+                                        ].map(m => (
+                                            <button
+                                                key={m.id}
+                                                type="button"
+                                                onClick={() => setSelectedProvider(m.id)}
+                                                className={`py-2 px-2.5 rounded-xl border text-xs text-center transition cursor-pointer ${selectedProvider === m.id ? 'border-nb-accent bg-nb-accent/15 text-nb-accent font-medium' : 'border-nb-border bg-nb-card text-nb-text-muted hover:bg-nb-hover'}`}
+                                            >
+                                                {m.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Zone Proxy sécurisé — les vraies clés API vivent sur le serveur (Worker), jamais ici */}
+                                <div className="mb-5">
+                                    <div className="flex justify-between items-center mb-1.5">
+                                        <label className="text-xs font-semibold text-nb-text-main flex items-center gap-1.5">
+                                            <span>Proxy API sécurisé</span>
+                                            <span className={`w-2 h-2 rounded-full ${isProxyConfigured ? 'bg-green-400' : 'bg-red-500'}`}></span>
+                                        </label>
+                                        <span className="text-[11px] text-nb-text-muted font-mono">Gemini + OpenAI + Groq</span>
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={proxyUrlInput}
+                                        onChange={(e) => setProxyUrlInput(e.target.value)}
+                                        placeholder="URL du proxy — ex: https://notebook-ia-proxy.votre-compte.workers.dev"
+                                        className="w-full bg-nb-card border border-nb-border rounded-xl p-2.5 text-xs font-mono text-nb-text-main outline-none focus:border-nb-accent placeholder:text-nb-text-muted mb-2"
+                                    />
+                                    <input
+                                        type="password"
+                                        value={proxyTokenInput}
+                                        onChange={(e) => setProxyTokenInput(e.target.value)}
+                                        placeholder="Proxy Token (optionnel, protège votre proxy contre les abus)"
+                                        className="w-full bg-nb-card border border-nb-border rounded-xl p-2.5 text-xs font-mono text-nb-text-main outline-none focus:border-nb-accent placeholder:text-nb-text-muted"
+                                    />
+                                    <p className="text-[11px] text-nb-text-muted mt-2 leading-relaxed">
+                                        Les clés API réelles ne sont jamais stockées ici ni dans ce fichier : elles vivent uniquement côté serveur, dans le Worker proxy. Voir <code className="bg-nb-card px-1 py-0.5 rounded">proxy/README.md</code> pour le déployer.
+                                    </p>
+                                </div>
+
+                                {/* Zone Supabase (partage réel des notebooks) */}
+                                <div className="mb-5 pt-4 border-t border-nb-border/60">
+                                    <div className="flex justify-between items-center mb-1.5">
+                                        <label className="text-xs font-semibold text-nb-text-main flex items-center gap-1.5">
+                                            <span>Supabase — Partage de notebooks</span>
+                                            <span className={`w-2 h-2 rounded-full ${isSupabaseConfigured ? 'bg-green-400' : 'bg-red-500'}`}></span>
+                                        </label>
+                                        <a
+                                            href="https://supabase.com"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-[11px] text-nb-accent hover:underline"
+                                        >
+                                            Créer un projet gratuit ↗
+                                        </a>
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={supabaseUrlInput}
+                                        onChange={(e) => setSupabaseUrlInput(e.target.value)}
+                                        placeholder="Project URL — ex: https://abcdefghij.supabase.co"
+                                        className="w-full bg-nb-card border border-nb-border rounded-xl p-2.5 text-xs font-mono text-nb-text-main outline-none focus:border-nb-accent placeholder:text-nb-text-muted mb-2"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={supabaseKeyInput}
+                                        onChange={(e) => setSupabaseKeyInput(e.target.value)}
+                                        placeholder="Clé « anon public » (Project Settings → API)"
+                                        className="w-full bg-nb-card border border-nb-border rounded-xl p-2.5 text-xs font-mono text-nb-text-main outline-none focus:border-nb-accent placeholder:text-nb-text-muted"
+                                    />
+                                    <p className="text-[11px] text-nb-text-muted mt-2 leading-relaxed">
+                                        Nécessite une table <code className="bg-nb-card px-1 py-0.5 rounded">notebooks_partages</code> (colonnes <code className="bg-nb-card px-1 py-0.5 rounded">id text</code>, <code className="bg-nb-card px-1 py-0.5 rounded">title text</code>, <code className="bg-nb-card px-1 py-0.5 rounded">data jsonb</code>) avec des policies RLS publiques (lecture + insertion).
+                                    </p>
+                                </div>
+
+                                <div className="flex gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={saveApiKeysFromModal}
+                                        className="flex-1 bg-nb-text-main text-nb-main border-none py-2.5 rounded-full font-semibold text-sm hover:opacity-90 transition cursor-pointer"
+                                    >
+                                        Enregistrer les clés
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsApiModalOpen(false)}
+                                        className="bg-transparent border border-nb-border text-nb-text-main px-5 py-2.5 rounded-full text-sm hover:bg-nb-hover transition cursor-pointer"
+                                    >
+                                        Fermer
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <style>{`
+                        @keyframes fadeIn {
+                            from { opacity: 0; }
+                            to { opacity: 1; }
+                        }
+                        @keyframes scaleIn {
+                            from { transform: scale(0.95); opacity: 0; }
+                            to { transform: scale(1); opacity: 1; }
+                        }
+                        .animate-fadeIn {
+                            animation: fadeIn 0.2s ease-out;
+                        }
+                        .animate-scaleIn {
+                            animation: scaleIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                        }
+                    `}</style>
+
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<NotebookApp />);
+    </script>
+</body>
+</html>

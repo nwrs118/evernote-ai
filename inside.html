@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="fr" class="scroll-smooth h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Notebook - Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel pour JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #020617; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased selection:bg-blue-500 selection:text-white min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const INITIAL_NOTEBOOKS = [
+            { id: 1, title: "Mastering the Foundations", date: "13 sept. 2026", sources: "3 sources", icon: "☕", pinned: true, collection: "Programmation" },
+            { id: 2, title: "Foundations of Java Programming", date: "11 sept. 2026", sources: "1 source", icon: "☕", pinned: false, collection: "Programmation" },
+            { id: 3, title: "React.js Essentials: Concepts", date: "29 août 2026", sources: "4 sources", icon: "⚛️", pinned: true, collection: "Programmation" },
+            { id: 4, title: "Rewiring the Entrepreneur", date: "12 août 2026", sources: "1 source", icon: "🧠", pinned: false, collection: "IA & Neuro" },
+            { id: 5, title: "Introduction to Computer Networking", date: "22 janv. 2026", sources: "1 source", icon: "🌐", pinned: false, collection: "Réseaux" },
+            { id: 6, title: "The Scrum Framework Essentials", date: "16 janv. 2026", sources: "15 sources", icon: "🏉", pinned: false, collection: "Gestion" },
+            { id: 7, title: "Généralités et Architecture", date: "14 nov. 2025", sources: "2 sources", icon: "💾", pinned: false, collection: "Systèmes" },
+            { id: 8, title: "File Systems, Directories, and I/O", date: "4 avr. 2025", sources: "1 source", icon: "📁", pinned: false, collection: "Systèmes" },
+            { id: 9, title: "File System Management", date: "9 mars 2025", sources: "2 sources", icon: "📂", pinned: false, collection: "Systèmes" },
+            { id: 10, title: "JavaScript DOM: Access, Events", date: "6 mars 2025", sources: "1 source", icon: "💻", pinned: false, collection: "Programmation" }
+        ];
+
+        const FEATURED_NOTEBOOKS = [
+            { id: "feat-1", title: "Femmes Révolutionnaires : Les Fondatrices", date: "18 févr. 2026", sources: "39 sources", gradient: "from-purple-900/40 to-slate-900", icon: "🌟" },
+            { id: "feat-2", title: "Votre conseiller financier", date: "9 mars 2026", sources: "43 sources", gradient: "from-blue-950 to-slate-900", icon: "📈" },
+            { id: "feat-3", title: "Un ordinateur peut-il simuler un cerveau ?", date: "28 juil. 2026", sources: "17 sources", gradient: "from-cyan-950 to-slate-900", icon: "🧠" },
+            { id: "feat-4", title: "Comment construire sa vie, par The Atlantic", date: "22 avr. 2025", sources: "46 sources", gradient: "from-red-950 to-slate-900", icon: "📖" },
+            { id: "feat-5", title: "Les Secrets des Super Agers", date: "5 mai 2025", sources: "17 sources", gradient: "from-amber-950 to-slate-900", icon: "🧬" },
+            { id: "feat-6", title: "La Science de Benjamin Franklin", date: "30 sept. 2025", sources: "38 sources", gradient: "from-stone-900 to-slate-950", icon: "⚡" }
+        ];
+
+        const COLLECTIONS_LIST = ["Tous", "Programmation", "Systèmes", "IA & Neuro", "Réseaux", "Gestion", "Général"];
+        const RANDOM_ICONS = ["📓", "📘", "💡", "🧠", "☕", "🔬", "🚀", "💻", "📚", "⚡", "🎯", "🤖", "📝", "📊"];
+
+        function App() {
+            const [notebooks, setNotebooks] = React.useState(() => {
+                const saved = localStorage.getItem('gemini_notebooks');
+                return saved ? JSON.parse(saved) : INITIAL_NOTEBOOKS;
+            });
+            const [searchQuery, setSearchQuery] = React.useState('');
+            const [selectedCollection, setSelectedCollection] = React.useState('Tous');
+            const [activeTab, setActiveTab] = React.useState('all');
+            const [activeMenuId, setActiveMenuId] = React.useState(null);
+            const [toast, setToast] = React.useState(null);
+
+            // Sauvegarde automatique dans localStorage
+            React.useEffect(() => {
+                localStorage.setItem('gemini_notebooks', JSON.stringify(notebooks));
+            }, [notebooks]);
+
+            // Fermer le menu lors d'un clic en dehors
+            React.useEffect(() => {
+                const handleClickOutside = (e) => {
+                    if (!e.target.closest('.menu-container')) {
+                        setActiveMenuId(null);
+                    }
+                };
+                window.addEventListener('click', handleClickOutside);
+                return () => window.removeEventListener('click', handleClickOutside);
+            }, []);
+
+            const showToast = (message) => {
+                setToast({ id: Date.now(), message });
+                setTimeout(() => setToast(null), 3000);
+            };
+
+            // 1-CLIC : Ajout direct d'un nouveau notebook (sans ouvrir aucune autre page)
+            const handleDirectAddNotebook = () => {
+                const now = new Date();
+                const formattedDate = now.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+                const count = notebooks.length + 1;
+                const randomIcon = RANDOM_ICONS[Math.floor(Math.random() * RANDOM_ICONS.length)];
+
+                const newNotebook = {
+                    id: Date.now(),
+                    title: `Nouveau notebook #${count}`,
+                    date: formattedDate,
+                    sources: "0 source",
+                    icon: randomIcon,
+                    pinned: false,
+                    collection: selectedCollection !== "Tous" ? selectedCollection : "Général"
+                };
+
+                setNotebooks([newNotebook, ...notebooks]);
+                showToast(`✨ Nouveau notebook #${count} ajouté avec succès !`);
+            };
+
+            // Renommer un notebook
+            const handleRename = (id, e) => {
+                e.stopPropagation();
+                const nb = notebooks.find(n => n.id === id);
+                const newTitle = prompt("Nouveau titre pour ce notebook :", nb?.title || "");
+                if (newTitle && newTitle.trim()) {
+                    setNotebooks(notebooks.map(n => n.id === id ? { ...n, title: newTitle.trim() } : n));
+                    showToast("Titre mis à jour avec succès !");
+                }
+                setActiveMenuId(null);
+            };
+
+            // Épingler / Désépingler
+            const handleTogglePin = (id, e) => {
+                e.stopPropagation();
+                setNotebooks(notebooks.map(n => {
+                    if (n.id === id) {
+                        const newPinned = !n.pinned;
+                        showToast(newPinned ? "📌 Notebook épinglé en haut !" : "Notebook désépinglé.");
+                        return { ...n, pinned: newPinned };
+                    }
+                    return n;
+                }));
+                setActiveMenuId(null);
+            };
+
+            // Supprimer un notebook
+            const handleDelete = (id, e) => {
+                e.stopPropagation();
+                const nb = notebooks.find(n => n.id === id);
+                if (window.confirm(`Voulez-vous vraiment supprimer "${nb?.title}" ?`)) {
+                    setNotebooks(notebooks.filter(n => n.id !== id));
+                    showToast("Notebook supprimé.");
+                }
+                setActiveMenuId(null);
+            };
+
+            // Filtrage recherche & collections
+            let filtered = [...notebooks];
+            if (searchQuery.trim()) {
+                const q = searchQuery.toLowerCase();
+                filtered = filtered.filter(n => 
+                    n.title.toLowerCase().includes(q) || 
+                    (n.collection && n.collection.toLowerCase().includes(q))
+                );
+            }
+            if (activeTab === 'collections' && selectedCollection !== "Tous") {
+                filtered = filtered.filter(n => n.collection === selectedCollection);
+            }
+            filtered.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+
+            return (
+                <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col pb-20">
+                    {/* Header / Navbar */}
+                    <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-md border-b border-slate-900">
+                        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+                            <div className="flex items-center space-x-8">
+                                <div className="flex items-center space-x-3 cursor-pointer group">
+                                    <img src="assets/app_logo.png" alt="Logo" className="w-8 h-8 object-contain drop-shadow-md group-hover:scale-105 transition transform" />
+                                    <span className="text-lg font-bold tracking-tight text-white group-hover:text-blue-400 transition-colors">Gemini Notebook</span>
+                                </div>
+
+                                <nav className="hidden md:flex items-center space-x-6 text-sm font-medium text-slate-400">
+                                    <button onClick={() => setActiveTab('all')} className={`pb-1 border-b-2 transition ${activeTab === 'all' ? 'text-white border-blue-500 font-semibold' : 'border-transparent hover:text-white'}`}>Tous</button>
+                                    <button onClick={() => setActiveTab('my')} className={`pb-1 border-b-2 transition ${activeTab === 'my' ? 'text-white border-blue-500 font-semibold' : 'border-transparent hover:text-white'}`}>Mes notebooks</button>
+                                    <button onClick={() => setActiveTab('collections')} className={`pb-1 border-b-2 transition ${activeTab === 'collections' ? 'text-white border-blue-500 font-semibold' : 'border-transparent hover:text-white'}`}>Collections</button>
+                                </nav>
+                            </div>
+
+                            <div className="flex items-center space-x-4">
+                                <div className="relative hidden sm:block">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                    </span>
+                                    <input 
+                                        type="text" 
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        placeholder="Rechercher des notebooks..." 
+                                        className="bg-slate-900 border border-slate-800 rounded-full pl-9 pr-8 py-1.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 w-64 transition" 
+                                    />
+                                    {searchQuery && (
+                                        <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-3 text-slate-400 hover:text-white">✕</button>
+                                    )}
+                                </div>
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-teal-400 flex items-center justify-center text-xs font-bold text-white shadow">
+                                    NB
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Sélection de notebooks (Featured) */}
+                    <section className="py-8 max-w-7xl mx-auto px-6 w-full">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center space-x-2">
+                                <span className="text-lg">✨</span>
+                                <h2 className="text-lg font-semibold text-white">Sélection de notebooks</h2>
+                            </div>
+                            <span className="text-xs text-blue-400 font-medium">Recommandés pour vous</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                            {FEATURED_NOTEBOOKS.map((item) => (
+                                <div 
+                                    key={item.id} 
+                                    className={`h-48 rounded-2xl p-4 flex flex-col justify-between border border-slate-800 bg-gradient-to-b ${item.gradient} hover:border-blue-500/50 hover:shadow-blue-500/10 cursor-pointer transition transform hover:-translate-y-1 shadow-lg relative group overflow-hidden`}
+                                >
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-xs px-2 py-0.5 rounded bg-black/40 text-blue-300 inline-block font-medium">Featured</span>
+                                            <span className="text-sm opacity-80">{item.icon}</span>
+                                        </div>
+                                        <h3 className="text-sm font-medium text-slate-100 line-clamp-2 leading-snug group-hover:text-blue-300 transition-colors">{item.title}</h3>
+                                    </div>
+                                    <div className="text-[11px] text-slate-400 flex items-center justify-between pt-2 border-t border-white/5">
+                                        <span>{item.date}</span>
+                                        <span>{item.sources}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+
+                    {/* Section Mes Notebooks */}
+                    <section className="py-6 max-w-7xl mx-auto px-6 w-full flex-1">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 gap-3">
+                            <div className="flex items-center space-x-3">
+                                <h2 className="text-lg font-semibold text-white">Notebooks récents</h2>
+                                <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-slate-400 font-medium">
+                                    {filtered.length} carnet{filtered.length > 1 ? 's' : ''}
+                                </span>
+                            </div>
+
+                            {activeTab === 'collections' && (
+                                <div className="flex items-center space-x-2 overflow-x-auto pb-1">
+                                    {COLLECTIONS_LIST.map((col) => (
+                                        <button
+                                            key={col}
+                                            onClick={() => setSelectedCollection(col)}
+                                            className={`px-3 py-1 rounded-full text-xs font-medium transition ${selectedCollection === col ? 'bg-blue-600 text-white' : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'}`}
+                                        >
+                                            {col}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Grille des notebooks */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                            {/* BOUTON NOUVEAU NOTEBOOK (AJOUT DIRECT EN 1 CLIC SANS QUITTER LE DASHBOARD) */}
+                            <div 
+                                onClick={handleDirectAddNotebook}
+                                className="h-44 rounded-2xl border border-dashed border-blue-500/40 bg-blue-600/5 hover:bg-blue-600/10 hover:border-blue-400 flex flex-col items-center justify-center cursor-pointer transition text-blue-400 group p-4 text-center select-none transform hover:-translate-y-0.5 active:scale-95 duration-150"
+                                title="Cliquer pour ajouter directement un nouveau notebook"
+                            >
+                                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white mb-2 shadow-lg shadow-blue-600/30 group-hover:scale-110 transition-transform">
+                                    <span className="text-xl leading-none font-bold">+</span>
+                                </div>
+                                <span className="text-xs font-semibold">Nouveau notebook</span>
+                                <span className="text-[10px] text-blue-400/70 mt-1">Ajouter en 1 clic</span>
+                            </div>
+
+                            {/* Liste des cartes */}
+                            {filtered.map((item) => (
+                                <div 
+                                    key={item.id} 
+                                    className={`h-44 rounded-2xl p-4 flex flex-col justify-between bg-slate-900 border ${item.pinned ? 'border-blue-500/40 bg-gradient-to-b from-blue-950/20 to-slate-900' : 'border-slate-800/80'} hover:border-slate-700 cursor-pointer transition shadow-md relative group hover:-translate-y-0.5 duration-150`}
+                                >
+                                    {item.pinned && (
+                                        <div className="absolute top-3 left-3 text-[10px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded flex items-center space-x-1">
+                                            <span>📌</span>
+                                            <span className="font-medium">Épinglé</span>
+                                        </div>
+                                    )}
+
+                                    {/* Menu Actions (⋮) */}
+                                    <div className="absolute top-2.5 right-2.5 menu-container z-20">
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveMenuId(activeMenuId === item.id ? null : item.id);
+                                            }}
+                                            className="w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-white transition opacity-0 group-hover:opacity-100"
+                                            title="Actions"
+                                        >
+                                            ⋮
+                                        </button>
+
+                                        {activeMenuId === item.id && (
+                                            <div className="absolute right-0 mt-1 w-52 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl py-1 text-xs text-slate-200 z-30 backdrop-blur-xl">
+                                                <button onClick={(e) => handleRename(item.id, e)} className="w-full text-left px-3.5 py-2 hover:bg-slate-800 flex items-center space-x-2.5 transition">
+                                                    <span>✏️</span><span>Modifier le titre</span>
+                                                </button>
+                                                <button onClick={(e) => handleTogglePin(item.id, e)} className="w-full text-left px-3.5 py-2 hover:bg-slate-800 flex items-center space-x-2.5 transition">
+                                                    <span>{item.pinned ? '📍' : '📌'}</span><span>{item.pinned ? 'Désépingler' : 'Épingler en haut'}</span>
+                                                </button>
+                                                <div className="border-t border-slate-800 my-1"></div>
+                                                <button onClick={(e) => handleDelete(item.id, e)} className="w-full text-left px-3.5 py-2 hover:bg-red-500/10 text-red-400 flex items-center space-x-2.5 transition">
+                                                    <span>🗑️</span><span>Supprimer</span>
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className={item.pinned ? "mt-4" : ""}>
+                                        <span className="text-xl mb-2.5 block">{item.icon}</span>
+                                        <h3 className="text-xs font-medium text-slate-200 line-clamp-2 leading-snug group-hover:text-blue-300 transition-colors">
+                                            {item.title}
+                                        </h3>
+                                        {item.collection && (
+                                            <span className="text-[10px] text-slate-400/80 mt-1 block truncate">{item.collection}</span>
+                                        )}
+                                    </div>
+
+                                    <div className="text-[11px] text-slate-500 pt-2 border-t border-slate-800/50 flex justify-between items-center">
+                                        <p className="truncate">{item.date}</p>
+                                        <p className="text-slate-400 font-medium text-[10px]">{item.sources}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {filtered.length === 0 && (
+                            <div className="text-center py-16 bg-slate-900/30 rounded-2xl border border-slate-900 mt-4">
+                                <span className="text-3xl mb-3 block">🔍</span>
+                                <p className="text-sm font-semibold text-slate-300">Aucun notebook ne correspond à votre recherche</p>
+                                <button onClick={handleDirectAddNotebook} className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white rounded-xl shadow-lg transition">
+                                    + Ajouter un notebook
+                                </button>
+                            </div>
+                        )}
+                    </section>
+
+                    {/* Toast Notification */}
+                    {toast && (
+                        <div className="fixed bottom-6 right-6 z-50 bg-blue-600 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-2 text-xs font-semibold border border-blue-400/30 animate-bounce">
+                            <span>{toast.message}</span>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>

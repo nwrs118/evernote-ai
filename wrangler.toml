@@ -1,0 +1,11 @@
+name = "notebook-ia-proxy"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+[vars]
+# Set to your actual site origin once deployed, e.g. "https://your-username.github.io"
+# "*" works for testing but allows any website to use your proxy (and your quota).
+ALLOWED_ORIGIN = "*"
+
+# Real secrets are NOT set here (this file can be committed to git safely).
+# Set them with `wrangler secret put <NAME>` instead — see README.md.
