@@ -1,98 +1,44 @@
-# Notebook IA — API Proxy
+# 🚀 EverNote — Votre partenaire de recherche optimisé par l'IA
 
-This tiny Cloudflare Worker holds your real Gemini / OpenAI / Groq / Jina API
-keys as server-side secrets. Your front-end (`page_principale.html`) never
-sees or stores them — it just calls this Worker, and the Worker attaches the
-real key before forwarding the request upstream.
+**EverNote** est une application web moderne inspirée de Google NotebookLM, conçue pour centraliser vos documents (PDF, sites web, vidéos YouTube) et interagir intelligemment avec eux grâce aux derniers modèles Gemini. 
 
-## 1. Install Wrangler (Cloudflare's CLI)
+Ce projet a été développé dans le cadre d'un hackathon par l'équipe **ChangeMakers**.
 
-```bash
-npm install -g wrangler
-wrangler login
-```
+---
 
-## 2. Deploy the Worker
+##✨ Fonctionnalités Clés
 
-From this `proxy/` folder:
+* **🧠 Reressource & Q&A Contextuel :** Posez des questions sur n'importe quel sujet ; les réponses sont toujours ancrées et tracées dans les sources que vous fournissez.
+  **🎙️ Résumés Audio Interactifs :** Écoutez un résumé audio de vos sources lu à voix haute, idéal pour assimiler vos cours ou rapports en déplacement.
+* **🗂️ Gestion Avancée des Notebooks & Collections :** 
+  * Créez, renommez et organisez vos carnets de notes par collections thématiques.
+  * Épinglez vos notebooks importants pour un accès rapide en haut du tableau de bord.
+  * Recherche instantanée et filtres dynamiques.
+* **🔐 Authentification Complète :
+* ** Pages dédiées pour la connexion (`login.html`), l'inscription (`signup.html`), et la récupération de mot de passe sécurisée (`forgot.html`).
+* **🌐 Exploration Publique :** Découvrez une sélection de notebooks publics et d'exemples pré-remplis pour trouver l'inspiration.
 
-```bash
-wrangler deploy
-```
 
-This prints your Worker's URL, something like:
 
-```
-https://notebook-ia-proxy.YOUR-SUBDOMAIN.workers.dev
-```
+## 🛠️ Stack Technique
 
-Copy that URL — you'll paste it into the app's settings modal (or directly
-into `PROXY_BASE_URL` in the HTML file).
+Le projet repose sur des technologies légères et performantes, sans nécessiter de configuration de build complexe (parfait pour le prototypage rapide en hackathon) :
+* **HTML5 & Tailwind CSS (CDN)** pour le design moderne, sombre et responsive.
+* **React 18 & JSX (Babel Standalone)** pour la logique interactive des composants et du tableau de bord directement dans le navigateur.
+* **LocalStorage** pour la persistance locale des données (notebooks, collections et session utilisateur).
+* **Supabase / PostgreSQL (Optionnel / Base SQL fournie)** pour la gestion des notebooks partagés (`db.sql`).
 
-## 3. Set your real API keys as secrets
+---
 
-These are **never written to any file** — Cloudflare stores them encrypted,
-and only this Worker can read them at request time.
+## 📂 Structure du Projet
 
-```bash
-wrangler secret put GEMINI_API_KEYS
-wrangler secret put OPENAI_API_KEYS
-wrangler secret put GROQ_API_KEYS
-wrangler secret put JINA_API_KEYS
-```
-
-Each prompt will ask you to paste a value. You can paste a single key, or
-several comma-separated keys for automatic rotation/fallback, e.g.:
-
-```
-sk-abc123...,sk-def456...
-```
-
-## 4. (Recommended) Set a proxy access token
-
-This stops random visitors from using your Worker (and burning your API
-quota) even if they discover its URL. It's a shared secret between your
-front-end and your Worker — not a provider key, just an abuse gate.
-
-```bash
-wrangler secret put PROXY_TOKEN
-```
-
-Then in the app's settings modal, paste the same value into "Proxy Token".
-
-## 5. Lock down CORS (optional but recommended)
-
-Edit `wrangler.toml` and set:
-
-```toml
-[vars]
-ALLOWED_ORIGIN = "https://your-actual-site.example.com"
-```
-
-Then redeploy with `wrangler deploy`.
-
-## 6. Point the app at your Worker
-
-Open `page_principale.html` in the browser, click the settings/API icon,
-and paste:
-
-- **Proxy URL**: your Worker URL from step 2
-- **Proxy Token**: the value from step 4 (if you set one)
-
-That's it — the app will call your Worker instead of the AI providers
-directly, and the real keys never leave your Cloudflare account.
-
-## Rotating your previously-exposed keys
-
-Because keys were pasted into a chat and were already hardcoded as fallback
-defaults in the original HTML file, treat all of the following as
-compromised and regenerate them before wiring up the new ones:
-
-- Gemini key (started `AQ.Ab8RN6...`)
-- OpenAI service-account key (started `sk-svcacct-...`)
-- OpenAI project key that was hardcoded as a default (started `sk-proj-...`)
-- Groq key (started `gsk_...`)
-- Jina key (started `jina_...`)
-
-Revoke each in its respective dashboard, generate fresh ones, and set only
-the fresh ones as Worker secrets in step 3.
+```text
+├── app.html              # Page d'accueil / Landing page (Présentation, démo, hackathon ideas)
+├── dashboard.html        # Tableau de bord utilisateur (Gestion des notebooks, collections, épinglés)
+├── login.html            # Page de connexion
+├── signup.html           # Page d'inscription
+├── forgot.html           # Récupération de mot de passe par étapes (Email -> OTP -> Nouveau mdp)
+├── page_principale.html  # Interface de discussion et d'analyse des sources du notebook
+├── db.sql                # Schéma de base de données SQL (tables, politiques RLS pour les notebooks partagés)
+└── assets/
+    └── app_logo.png      # Logo de l'application
